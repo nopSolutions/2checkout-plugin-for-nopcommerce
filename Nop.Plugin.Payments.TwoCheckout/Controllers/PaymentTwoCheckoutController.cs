@@ -15,6 +15,8 @@ namespace Nop.Plugin.Payments.TwoCheckout.Controllers
 {
     public class PaymentTwoCheckoutController : BasePaymentController
     {
+        #region Fields
+
         private readonly ISettingService _settingService;
         private readonly IPaymentService _paymentService;
         private readonly IOrderService _orderService;
@@ -22,8 +24,13 @@ namespace Nop.Plugin.Payments.TwoCheckout.Controllers
         private readonly TwoCheckoutPaymentSettings _twoCheckoutPaymentSettings;
         private readonly PaymentSettings _paymentSettings;
 
+        #endregion
+
+        #region Ctor
+
         public PaymentTwoCheckoutController(ISettingService settingService,
-            IPaymentService paymentService, IOrderService orderService,
+            IPaymentService paymentService, 
+            IOrderService orderService,
             IOrderProcessingService orderProcessingService,
             TwoCheckoutPaymentSettings twoCheckoutPaymentSettings,
             PaymentSettings paymentSettings)
@@ -36,16 +43,22 @@ namespace Nop.Plugin.Payments.TwoCheckout.Controllers
             this._paymentSettings = paymentSettings;
         }
 
+        #endregion
+
+        #region Methods
+
         [AdminAuthorize]
         [ChildActionOnly]
         public ActionResult Configure()
         {
-            var model = new ConfigurationModel();
-            model.UseSandbox = _twoCheckoutPaymentSettings.UseSandbox;
-            model.VendorId = _twoCheckoutPaymentSettings.VendorId;
-            model.UseMd5Hashing = _twoCheckoutPaymentSettings.UseMd5Hashing;
-            model.SecretWord = _twoCheckoutPaymentSettings.SecretWord;
-            model.AdditionalFee = _twoCheckoutPaymentSettings.AdditionalFee;
+            var model = new ConfigurationModel
+            {
+                UseSandbox = _twoCheckoutPaymentSettings.UseSandbox,
+                VendorId = _twoCheckoutPaymentSettings.VendorId,
+                UseMd5Hashing = _twoCheckoutPaymentSettings.UseMd5Hashing,
+                SecretWord = _twoCheckoutPaymentSettings.SecretWord,
+                AdditionalFee = _twoCheckoutPaymentSettings.AdditionalFee
+            };
 
             return View("~/Plugins/Payments.TwoCheckout/Views/PaymentTwoCheckout/Configure.cshtml", model);
         }
@@ -73,6 +86,7 @@ namespace Nop.Plugin.Payments.TwoCheckout.Controllers
         public ActionResult PaymentInfo()
         {
             var model = new PaymentInfoModel();
+
             return View("~/Plugins/Payments.TwoCheckout/Views/PaymentTwoCheckout/PaymentInfo.cshtml", model);
         }
 
@@ -80,6 +94,7 @@ namespace Nop.Plugin.Payments.TwoCheckout.Controllers
         public override IList<string> ValidatePaymentForm(FormCollection form)
         {
             var warnings = new List<string>();
+
             return warnings;
         }
 
@@ -87,6 +102,7 @@ namespace Nop.Plugin.Payments.TwoCheckout.Controllers
         public override ProcessPaymentRequest GetPaymentInfo(FormCollection form)
         {
             var paymentInfo = new ProcessPaymentRequest();
+
             return paymentInfo;
         }
 
@@ -94,51 +110,56 @@ namespace Nop.Plugin.Payments.TwoCheckout.Controllers
         public ActionResult IPNHandler(FormCollection form)
         {
             var processor = _paymentService.LoadPaymentMethodBySystemName("Payments.TwoCheckout") as TwoCheckoutPaymentProcessor;
+
             if (processor == null ||
                 !processor.IsPaymentMethodActive(_paymentSettings) || !processor.PluginDescriptor.Installed)
                 throw new NopException("TwoCheckout module cannot be loaded");
 
-            //item_id_1 or vendor_order_id
-            string nopOrderIdStr = form["item_id_1"];
+            //x_invoice_num
+            string nopOrderIdStr = form["x_invoice_num"];
             int nopOrderId = 0;
             int.TryParse(nopOrderIdStr, out nopOrderId);
             var order = _orderService.GetOrderById(nopOrderId);
+
             if (order == null)
             {
-
                 return RedirectToAction("Index", "Home", new { area = "" });
             }
 
             //debug info
             var sbDebug = new StringBuilder();
             sbDebug.AppendLine("2Checkout IPN:");
+
             foreach (string key in form.AllKeys)
             {
                 string value = form[key];
+
                 sbDebug.AppendLine(key + ": " + value);
             }
 
-            order.OrderNotes.Add(new OrderNote()
+            order.OrderNotes.Add(new OrderNote
             {
                 Note = sbDebug.ToString(),
                 DisplayToCustomer = false,
                 CreatedOnUtc = DateTime.UtcNow
             });
+
             _orderService.UpdateOrder(order);
-
-
 
             //sale id
             string sale_id = string.Empty;
+
             if (_twoCheckoutPaymentSettings.UseSandbox)
                 sale_id = "1";
             else
                 sale_id = form["sale_id"];
+
             if (sale_id == null)
                 sale_id = string.Empty;
 
             //invoice id
             string invoice_id = form["invoice_id"];
+
             if (invoice_id == null)
                 invoice_id = string.Empty;
 
@@ -146,11 +167,13 @@ namespace Nop.Plugin.Payments.TwoCheckout.Controllers
             {
                 string vendorId = _twoCheckoutPaymentSettings.VendorId;
                 string secretWord = _twoCheckoutPaymentSettings.SecretWord;
-
                 string compareHash1 = processor.CalculateMD5hash(sale_id + vendorId + invoice_id + secretWord);
+
                 if (String.IsNullOrEmpty(compareHash1))
                     throw new NopException("2Checkout empty hash string");
+
                 string compareHash2 = form["md5_hash"];
+
                 if (compareHash2 == null)
                     compareHash2 = string.Empty;
 
@@ -162,6 +185,7 @@ namespace Nop.Plugin.Payments.TwoCheckout.Controllers
                         DisplayToCustomer = false,
                         CreatedOnUtc = DateTime.UtcNow
                     });
+
                     _orderService.UpdateOrder(order);
 
                     return RedirectToAction("Index", "Home", new { area = "" });
@@ -169,15 +193,22 @@ namespace Nop.Plugin.Payments.TwoCheckout.Controllers
             }
 
             string message_type = form["message_type"];
+
             if (message_type == null)
                 message_type = string.Empty;
+
             string invoice_status = form["invoice_status"];
+
             if (invoice_status == null)
                 invoice_status = string.Empty;
+
             string fraud_status = form["fraud_status"];
+
             if (fraud_status == null)
                 fraud_status = string.Empty;
+
             string payment_type = form["payment_type"];
+
             if (payment_type == null)
                 payment_type = string.Empty;
 
@@ -192,12 +223,14 @@ namespace Nop.Plugin.Payments.TwoCheckout.Controllers
             sb.AppendLine("fraud_status: " + fraud_status);
             sb.AppendLine("payment_type: " + payment_type);
             sb.AppendLine("New payment status: " + newPaymentStatus);
+
             order.OrderNotes.Add(new OrderNote()
             {
                 Note = sb.ToString(),
                 DisplayToCustomer = false,
                 CreatedOnUtc = DateTime.UtcNow
             });
+
             _orderService.UpdateOrder(order);
 
             //new payment status
@@ -243,6 +276,7 @@ namespace Nop.Plugin.Payments.TwoCheckout.Controllers
                 default:
                     break;
             }
+
             return Content("");
         }
 
@@ -250,10 +284,13 @@ namespace Nop.Plugin.Payments.TwoCheckout.Controllers
         public ActionResult Return()
         {
             var processor = _paymentService.LoadPaymentMethodBySystemName("Payments.TwoCheckout") as TwoCheckoutPaymentProcessor;
+
             if (processor == null || !processor.IsPaymentMethodActive(_paymentSettings) || !processor.PluginDescriptor.Installed)
                 throw new NopException("TwoCheckout module cannot be loaded");
 
             return RedirectToAction("Index", "Home", new { area = "" });
         }
+
+        #endregion
     }
 }

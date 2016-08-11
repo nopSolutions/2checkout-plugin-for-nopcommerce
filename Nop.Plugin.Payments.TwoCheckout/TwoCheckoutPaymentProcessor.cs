@@ -24,20 +24,21 @@ namespace Nop.Plugin.Payments.TwoCheckout
     {
         #region Fields
 
-        private readonly TwoCheckoutPaymentSettings _twoCheckoutPaymentSettings;
         private readonly ISettingService _settingService;
         private readonly IWebHelper _webHelper;
+        private readonly TwoCheckoutPaymentSettings _twoCheckoutPaymentSettings;
 
         #endregion
 
         #region Ctor
 
-        public TwoCheckoutPaymentProcessor(TwoCheckoutPaymentSettings twoCheckoutPaymentSettings,
-            ISettingService settingService, IWebHelper webHelper)
+        public TwoCheckoutPaymentProcessor(ISettingService settingService, 
+            IWebHelper webHelper, 
+            TwoCheckoutPaymentSettings twoCheckoutPaymentSettings)
         {
-            this._twoCheckoutPaymentSettings = twoCheckoutPaymentSettings;
             this._settingService = settingService;
             this._webHelper = webHelper;
+            this._twoCheckoutPaymentSettings = twoCheckoutPaymentSettings;
         }
 
         #endregion
@@ -54,6 +55,7 @@ namespace Nop.Plugin.Payments.TwoCheckout
             var md5Hasher = new MD5CryptoServiceProvider();
             byte[] data = md5Hasher.ComputeHash(Encoding.Default.GetBytes(input));
             var sBuilder = new StringBuilder();
+
             for (int i = 0; i < data.Length; i++)
             {
                 sBuilder.Append(data[i].ToString("x2"));
@@ -71,7 +73,9 @@ namespace Nop.Plugin.Payments.TwoCheckout
         /// <param name="payment_type">2Checkout payment type</param>
         /// <returns>Payment status</returns>
         public PaymentStatus GetPaymentStatus(string message_type,
-            string invoice_status, string fraud_status, string payment_type)
+            string invoice_status, 
+            string fraud_status, 
+            string payment_type)
         {
             var result = PaymentStatus.Pending;
 
@@ -118,6 +122,7 @@ namespace Nop.Plugin.Payments.TwoCheckout
                 default:
                     break;
             }
+
             return result;
         }
     
@@ -131,6 +136,7 @@ namespace Nop.Plugin.Payments.TwoCheckout
         {
             var result = new ProcessPaymentResult();
             result.NewPaymentStatus = PaymentStatus.Pending;
+
             return result;
         }
 
@@ -141,12 +147,15 @@ namespace Nop.Plugin.Payments.TwoCheckout
         public void PostProcessPayment(PostProcessPaymentRequest postProcessPaymentRequest)
         {
             string returnUrl = _webHelper.GetStoreLocation(false) + "Plugins/PaymentTwoCheckout/Return";
-
             var builder = new StringBuilder();
-            builder.AppendFormat("{0}?id_type=1", "https://www.2checkout.com/2co/buyer/purchase");
+
+            var purchaseUrl = _twoCheckoutPaymentSettings.UseSandbox ? "https://sandbox.2checkout.com/checkout/purchase" : "https://www.2checkout.com/2co/buyer/purchase";
+
+            builder.AppendFormat("{0}?id_type=1", purchaseUrl);
 
             //products
             var orderProducts = postProcessPaymentRequest.Order.OrderItems.ToList();
+
             for (int i = 0; i < orderProducts.Count; i++)
             {
                 int pNum = i + 1;
@@ -155,7 +164,9 @@ namespace Nop.Plugin.Payments.TwoCheckout
 
                 string c_prod = string.Format("c_prod_{0}", pNum);
                 string c_prod_value = string.Format("{0},{1}", product.Sku, orderItem.Quantity);
+
                 builder.AppendFormat("&{0}={1}", c_prod, c_prod_value);
+
                 string c_name = string.Format("c_name_{0}", pNum);
                 string c_name_value = product.GetLocalized(x => x.Name);
 
@@ -163,23 +174,28 @@ namespace Nop.Plugin.Payments.TwoCheckout
 
                 string c_description = string.Format("c_description_{0}", pNum);
                 string c_description_value = product.GetLocalized(x => x.Name);
+
                 if (!String.IsNullOrEmpty(orderItem.AttributeDescription))
                 {
                     c_description_value = c_description_value + ". " + orderItem.AttributeDescription;
                     c_description_value = c_description_value.Replace("<br />", ". ");
                 }
+
                 builder.AppendFormat("&{0}={1}", HttpUtility.UrlEncode(c_description), HttpUtility.UrlEncode(c_description_value));
 
                 string c_price = string.Format("c_price_{0}", pNum);
                 string c_price_value = orderItem.UnitPriceInclTax.ToString("0.00", CultureInfo.InvariantCulture);
+
                 builder.AppendFormat("&{0}={1}", c_price, c_price_value);
 
                 string c_tangible = string.Format("c_tangible_{0}", pNum);
                 string c_tangible_value = "Y";
+
                 if (product.IsDownload)
                 {
                     c_tangible_value = "N";
                 }
+
                 builder.AppendFormat("&{0}={1}", c_tangible, c_tangible_value);
             }
 
@@ -189,23 +205,31 @@ namespace Nop.Plugin.Payments.TwoCheckout
             //("x_receipt_link_url", returnUrl);
             //("x_return_url", returnUrl);
             //("x_return", returnUrl);
+
             if (_twoCheckoutPaymentSettings.UseSandbox)
                 builder.AppendFormat("&demo=Y");
+
             builder.AppendFormat("&x_First_Name={0}", HttpUtility.UrlEncode(postProcessPaymentRequest.Order.BillingAddress.FirstName));
             builder.AppendFormat("&x_Last_Name={0}", HttpUtility.UrlEncode(postProcessPaymentRequest.Order.BillingAddress.LastName));
             builder.AppendFormat("&x_Address={0}", HttpUtility.UrlEncode(postProcessPaymentRequest.Order.BillingAddress.Address1));
             builder.AppendFormat("&x_City={0}", HttpUtility.UrlEncode(postProcessPaymentRequest.Order.BillingAddress.City));
+
             var billingStateProvince = postProcessPaymentRequest.Order.BillingAddress.StateProvince;
+
             if (billingStateProvince != null)
                 builder.AppendFormat("&x_State={0}", HttpUtility.UrlEncode(billingStateProvince.Abbreviation));
             else
                 builder.AppendFormat("&x_State={0}", HttpUtility.UrlEncode(""));
+
             builder.AppendFormat("&x_Zip={0}", HttpUtility.UrlEncode(postProcessPaymentRequest.Order.BillingAddress.ZipPostalCode));
+
             var billingCountry = postProcessPaymentRequest.Order.BillingAddress.Country;
+
             if (billingCountry != null)
                 builder.AppendFormat("&x_Country={0}", HttpUtility.UrlEncode(billingCountry.ThreeLetterIsoCode));
             else
                 builder.AppendFormat("&x_Country={0}", HttpUtility.UrlEncode(""));
+
             builder.AppendFormat("&x_EMail={0}", HttpUtility.UrlEncode(postProcessPaymentRequest.Order.BillingAddress.Email));
             builder.AppendFormat("&x_Phone={0}", HttpUtility.UrlEncode(postProcessPaymentRequest.Order.BillingAddress.PhoneNumber));
             HttpContext.Current.Response.Redirect(builder.ToString());
@@ -221,6 +245,7 @@ namespace Nop.Plugin.Payments.TwoCheckout
             //you can put any logic here
             //for example, hide this payment method if all products in the cart are downloadable
             //or hide this payment method if current customer is from certain country
+
             return false;
         }
 
@@ -242,7 +267,9 @@ namespace Nop.Plugin.Payments.TwoCheckout
         public CapturePaymentResult Capture(CapturePaymentRequest capturePaymentRequest)
         {
             var result = new CapturePaymentResult();
+
             result.AddError("Capture method not supported");
+
             return result;
         }
 
@@ -254,7 +281,9 @@ namespace Nop.Plugin.Payments.TwoCheckout
         public RefundPaymentResult Refund(RefundPaymentRequest refundPaymentRequest)
         {
             var result = new RefundPaymentResult();
+
             result.AddError("Refund method not supported");
+
             return result;
         }
 
@@ -266,7 +295,9 @@ namespace Nop.Plugin.Payments.TwoCheckout
         public VoidPaymentResult Void(VoidPaymentRequest voidPaymentRequest)
         {
             var result = new VoidPaymentResult();
+
             result.AddError("Void method not supported");
+
             return result;
         }
 
@@ -278,7 +309,9 @@ namespace Nop.Plugin.Payments.TwoCheckout
         public ProcessPaymentResult ProcessRecurringPayment(ProcessPaymentRequest processPaymentRequest)
         {
             var result = new ProcessPaymentResult();
+
             result.AddError("Recurring payment not supported");
+
             return result;
         }
 
@@ -290,7 +323,9 @@ namespace Nop.Plugin.Payments.TwoCheckout
         public CancelRecurringPaymentResult CancelRecurringPayment(CancelRecurringPaymentRequest cancelPaymentRequest)
         {
             var result = new CancelRecurringPaymentResult();
+
             result.AddError("Recurring payment not supported");
+
             return result;
         }
 
@@ -339,6 +374,9 @@ namespace Nop.Plugin.Payments.TwoCheckout
             return typeof(PaymentTwoCheckoutController);
         }
 
+        /// <summary>
+        /// Install plugin
+        /// </summary>
         public override void Install()
         {
             var settings = new TwoCheckoutPaymentSettings()
@@ -349,6 +387,7 @@ namespace Nop.Plugin.Payments.TwoCheckout
                 SecretWord = "",
                 AdditionalFee = 0,
             };
+
             _settingService.SaveSetting(settings);
 
             //locales
@@ -367,6 +406,9 @@ namespace Nop.Plugin.Payments.TwoCheckout
             base.Install();
         }
 
+        /// <summary>
+        /// Uninstall plugin
+        /// </summary>
         public override void Uninstall()
         {
             //locales

@@ -6,6 +6,8 @@ namespace Nop.Plugin.Payments.TwoCheckout
 {
     public partial class RouteProvider : IRouteProvider
     {
+        #region Methods
+
         public void RegisterRoutes(RouteCollection routes)
         {
             //IPNHandler
@@ -22,6 +24,11 @@ namespace Nop.Plugin.Payments.TwoCheckout
                  new[] { "Nop.Plugin.Payments.TwoCheckout.Controllers" }
             );
         }
+
+        #endregion
+
+        #region Properties
+
         public int Priority
         {
             get
@@ -29,5 +36,7 @@ namespace Nop.Plugin.Payments.TwoCheckout
                 return 0;
             }
         }
+
+        #endregion
     }
 }
