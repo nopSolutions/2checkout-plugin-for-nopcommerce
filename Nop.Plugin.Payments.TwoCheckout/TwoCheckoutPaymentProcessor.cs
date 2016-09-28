@@ -6,13 +6,16 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Web;
 using System.Web.Routing;
-using Nop.Core;
+using Nop.Core.Domain.Directory;
 using Nop.Core.Domain.Orders;
 using Nop.Core.Domain.Payments;
+using Nop.Core.Html;
 using Nop.Core.Plugins;
 using Nop.Plugin.Payments.TwoCheckout.Controllers;
 using Nop.Services.Configuration;
+using Nop.Services.Directory;
 using Nop.Services.Localization;
+using Nop.Services.Orders;
 using Nop.Services.Payments;
 
 namespace Nop.Plugin.Payments.TwoCheckout
@@ -25,20 +28,26 @@ namespace Nop.Plugin.Payments.TwoCheckout
         #region Fields
 
         private readonly ISettingService _settingService;
-        private readonly IWebHelper _webHelper;
         private readonly TwoCheckoutPaymentSettings _twoCheckoutPaymentSettings;
+        private readonly IOrderTotalCalculationService _orderTotalCalculationService;
+        private readonly ICurrencyService _currencyService;
+        private readonly CurrencySettings _currencySettings;
 
         #endregion
 
         #region Ctor
 
         public TwoCheckoutPaymentProcessor(ISettingService settingService, 
-            IWebHelper webHelper, 
-            TwoCheckoutPaymentSettings twoCheckoutPaymentSettings)
+            TwoCheckoutPaymentSettings twoCheckoutPaymentSettings,
+            IOrderTotalCalculationService orderTotalCalculationService,
+            ICurrencyService currencyService,
+            CurrencySettings currencySettings)
         {
             this._settingService = settingService;
-            this._webHelper = webHelper;
             this._twoCheckoutPaymentSettings = twoCheckoutPaymentSettings;
+            this._orderTotalCalculationService = orderTotalCalculationService;
+            this._currencyService = currencyService;
+            this._currencySettings = currencySettings;
         }
 
         #endregion
@@ -53,79 +62,16 @@ namespace Nop.Plugin.Payments.TwoCheckout
         public string CalculateMD5hash(string input)
         {
             var md5Hasher = new MD5CryptoServiceProvider();
-            byte[] data = md5Hasher.ComputeHash(Encoding.Default.GetBytes(input));
+            var data = md5Hasher.ComputeHash(Encoding.Default.GetBytes(input));
             var sBuilder = new StringBuilder();
 
-            for (int i = 0; i < data.Length; i++)
+            foreach (var t in data)
             {
-                sBuilder.Append(data[i].ToString("x2"));
+                sBuilder.Append(t.ToString("x2"));
             }
 
             return sBuilder.ToString();
         }
-
-        /// <summary>
-        /// Gets a payment status
-        /// </summary>
-        /// <param name="message_type"> Indicates type of message (ORDER_CREATED, FRAUD_STATUS_CHANGED, SHIP_STATUS_CHANGED, INVOICE_STATUS_CHANGED, REFUND_ISSUED, RECURRING_INSTALLMENT_SUCCESS, RECURRING_INSTALLMENT_FAILED, RECURRING_STOPPED, RECURRING_COMPLETE, or RECURRING_RESTARTED)</param>
-        /// <param name="invoice_status">Invoice status (approved, pending, deposited, or declined)</param>
-        /// <param name="fraud_status">2Checkout fraud review (pass, fail, or wait); This parameter could be empty for some sales</param>
-        /// <param name="payment_type">2Checkout payment type</param>
-        /// <returns>Payment status</returns>
-        public PaymentStatus GetPaymentStatus(string message_type,
-            string invoice_status, 
-            string fraud_status, 
-            string payment_type)
-        {
-            var result = PaymentStatus.Pending;
-
-            switch (message_type.ToUpperInvariant())
-            {
-                case "ORDER_CREATED":
-                    {
-                    }
-                    break;
-                case "FRAUD_STATUS_CHANGED":
-                    {
-                        if (fraud_status == "pass")
-                        {
-                            if (invoice_status == "approved")
-                            {
-                                result = PaymentStatus.Paid;
-                            }
-                            else
-                            {
-                                if (payment_type == "paypal ec")
-                                {
-                                    result = PaymentStatus.Paid;
-                                }
-                            }
-                        }
-                    }
-                    break;
-                case "INVOICE_STATUS_CHANGED":
-                    {
-                    }
-                    break;
-                case "REFUND_ISSUED":
-                    {
-                        result = PaymentStatus.Refunded;
-                    }
-                    break;
-                case "SHIP_STATUS_CHANGED":
-                case "RECURRING_INSTALLMENT_SUCCESS":
-                case "RECURRING_INSTALLMENT_FAILED":
-                case "RECURRING_STOPPED":
-                case "RECURRING_COMPLETE":
-                case "RECURRING_RESTARTED":
-                    break;
-                default:
-                    break;
-            }
-
-            return result;
-        }
-    
 
         /// <summary>
         /// Process a payment
@@ -134,10 +80,7 @@ namespace Nop.Plugin.Payments.TwoCheckout
         /// <returns>Process payment result</returns>
         public ProcessPaymentResult ProcessPayment(ProcessPaymentRequest processPaymentRequest)
         {
-            var result = new ProcessPaymentResult();
-            result.NewPaymentStatus = PaymentStatus.Pending;
-
-            return result;
+            return new ProcessPaymentResult { NewPaymentStatus = PaymentStatus.Pending };
         }
 
         /// <summary>
@@ -146,50 +89,49 @@ namespace Nop.Plugin.Payments.TwoCheckout
         /// <param name="postProcessPaymentRequest">Payment info required for an order processing</param>
         public void PostProcessPayment(PostProcessPaymentRequest postProcessPaymentRequest)
         {
-            string returnUrl = _webHelper.GetStoreLocation(false) + "Plugins/PaymentTwoCheckout/Return";
             var builder = new StringBuilder();
 
-            var purchaseUrl = _twoCheckoutPaymentSettings.UseSandbox ? "https://sandbox.2checkout.com/checkout/purchase" : "https://www.2checkout.com/2co/buyer/purchase";
+            var purchaseUrl = _twoCheckoutPaymentSettings.UseSandbox ? "https://sandbox.2checkout.com/checkout/purchase" : "https://www.2checkout.com/checkout/purchase";
 
             builder.AppendFormat("{0}?id_type=1", purchaseUrl);
 
             //products
             var orderProducts = postProcessPaymentRequest.Order.OrderItems.ToList();
 
-            for (int i = 0; i < orderProducts.Count; i++)
+            for (var i = 0; i < orderProducts.Count; i++)
             {
-                int pNum = i + 1;
+                var pNum = i + 1;
                 var orderItem = orderProducts[i];
                 var product = orderProducts[i].Product;
 
-                string c_prod = string.Format("c_prod_{0}", pNum);
-                string c_prod_value = string.Format("{0},{1}", product.Sku, orderItem.Quantity);
+                var c_prod = string.Format("c_prod_{0}", pNum);
+                var c_prod_value = string.Format("{0},{1}", product.Sku, orderItem.Quantity);
 
                 builder.AppendFormat("&{0}={1}", c_prod, c_prod_value);
 
-                string c_name = string.Format("c_name_{0}", pNum);
-                string c_name_value = product.GetLocalized(x => x.Name);
+                var c_name = string.Format("c_name_{0}", pNum);
+                var c_name_value = product.GetLocalized(x => x.Name);
 
                 builder.AppendFormat("&{0}={1}", HttpUtility.UrlEncode(c_name), HttpUtility.UrlEncode(c_name_value));
 
-                string c_description = string.Format("c_description_{0}", pNum);
-                string c_description_value = product.GetLocalized(x => x.Name);
+                var c_description = string.Format("c_description_{0}", pNum);
+                var c_description_value = product.GetLocalized(x => x.Name);
 
-                if (!String.IsNullOrEmpty(orderItem.AttributeDescription))
+                if (!string.IsNullOrEmpty(orderItem.AttributeDescription))
                 {
                     c_description_value = c_description_value + ". " + orderItem.AttributeDescription;
-                    c_description_value = c_description_value.Replace("<br />", ". ");
+                    c_description_value = HtmlHelper.StripTags(c_description_value);
                 }
 
                 builder.AppendFormat("&{0}={1}", HttpUtility.UrlEncode(c_description), HttpUtility.UrlEncode(c_description_value));
 
-                string c_price = string.Format("c_price_{0}", pNum);
-                string c_price_value = orderItem.UnitPriceInclTax.ToString("0.00", CultureInfo.InvariantCulture);
+                var c_price = string.Format("c_price_{0}", pNum);
+                var c_price_value = orderItem.UnitPriceInclTax.ToString("0.00", CultureInfo.InvariantCulture);
 
                 builder.AppendFormat("&{0}={1}", c_price, c_price_value);
 
-                string c_tangible = string.Format("c_tangible_{0}", pNum);
-                string c_tangible_value = "Y";
+                var c_tangible = string.Format("c_tangible_{0}", pNum);
+                var c_tangible_value = "Y";
 
                 if (product.IsDownload)
                 {
@@ -199,13 +141,12 @@ namespace Nop.Plugin.Payments.TwoCheckout
                 builder.AppendFormat("&{0}={1}", c_tangible, c_tangible_value);
             }
 
-            builder.AppendFormat("&x_login={0}", _twoCheckoutPaymentSettings.VendorId);
+            builder.AppendFormat("&x_login={0}", _twoCheckoutPaymentSettings.AccountNumber);
+            builder.AppendFormat("&sid={0}", _twoCheckoutPaymentSettings.AccountNumber);
             builder.AppendFormat("&x_amount={0}", postProcessPaymentRequest.Order.OrderTotal.ToString("0.00", CultureInfo.InvariantCulture));
+            builder.AppendFormat("&currency_code={0}", _currencyService.GetCurrencyById(_currencySettings.PrimaryStoreCurrencyId).CurrencyCode);
             builder.AppendFormat("&x_invoice_num={0}", postProcessPaymentRequest.Order.Id);
-            //("x_receipt_link_url", returnUrl);
-            //("x_return_url", returnUrl);
-            //("x_return", returnUrl);
-
+           
             if (_twoCheckoutPaymentSettings.UseSandbox)
                 builder.AppendFormat("&demo=Y");
 
@@ -216,19 +157,17 @@ namespace Nop.Plugin.Payments.TwoCheckout
 
             var billingStateProvince = postProcessPaymentRequest.Order.BillingAddress.StateProvince;
 
-            if (billingStateProvince != null)
-                builder.AppendFormat("&x_State={0}", HttpUtility.UrlEncode(billingStateProvince.Abbreviation));
-            else
-                builder.AppendFormat("&x_State={0}", HttpUtility.UrlEncode(""));
+            builder.AppendFormat("&x_State={0}", billingStateProvince != null
+                    ? HttpUtility.UrlEncode(billingStateProvince.Abbreviation)
+                    : HttpUtility.UrlEncode(""));
 
             builder.AppendFormat("&x_Zip={0}", HttpUtility.UrlEncode(postProcessPaymentRequest.Order.BillingAddress.ZipPostalCode));
 
             var billingCountry = postProcessPaymentRequest.Order.BillingAddress.Country;
 
-            if (billingCountry != null)
-                builder.AppendFormat("&x_Country={0}", HttpUtility.UrlEncode(billingCountry.ThreeLetterIsoCode));
-            else
-                builder.AppendFormat("&x_Country={0}", HttpUtility.UrlEncode(""));
+            builder.AppendFormat("&x_Country={0}", billingCountry != null
+                    ? HttpUtility.UrlEncode(billingCountry.ThreeLetterIsoCode)
+                    : HttpUtility.UrlEncode(""));
 
             builder.AppendFormat("&x_EMail={0}", HttpUtility.UrlEncode(postProcessPaymentRequest.Order.BillingAddress.Email));
             builder.AppendFormat("&x_Phone={0}", HttpUtility.UrlEncode(postProcessPaymentRequest.Order.BillingAddress.PhoneNumber));
@@ -256,7 +195,9 @@ namespace Nop.Plugin.Payments.TwoCheckout
         /// <returns>Additional handling fee</returns>
         public decimal GetAdditionalHandlingFee(IList<ShoppingCartItem> cart)
         {
-            return _twoCheckoutPaymentSettings.AdditionalFee;
+            var result = this.CalculateAdditionalFee(_orderTotalCalculationService, cart,
+                _twoCheckoutPaymentSettings.AdditionalFee, _twoCheckoutPaymentSettings.AdditionalFeePercentage);
+            return result;
         }
 
         /// <summary>
@@ -353,7 +294,7 @@ namespace Nop.Plugin.Payments.TwoCheckout
         {
             actionName = "Configure";
             controllerName = "PaymentTwoCheckout";
-            routeValues = new RouteValueDictionary() { { "Namespaces", "Nop.Plugin.Payments.TwoCheckout.Controllers" }, { "area", null } };
+            routeValues = new RouteValueDictionary { { "Namespaces", "Nop.Plugin.Payments.TwoCheckout.Controllers" }, { "area", null } };
         }
 
         /// <summary>
@@ -366,7 +307,7 @@ namespace Nop.Plugin.Payments.TwoCheckout
         {
             actionName = "PaymentInfo";
             controllerName = "PaymentTwoCheckout";
-            routeValues = new RouteValueDictionary() { { "Namespaces", "Nop.Plugin.Payments.TwoCheckout.Controllers" }, { "area", null } };
+            routeValues = new RouteValueDictionary { { "Namespaces", "Nop.Plugin.Payments.TwoCheckout.Controllers" }, { "area", null } };
         }
 
         public Type GetControllerType()
@@ -382,7 +323,7 @@ namespace Nop.Plugin.Payments.TwoCheckout
             var settings = new TwoCheckoutPaymentSettings()
             {
                 UseSandbox = false,
-                VendorId = "",
+                AccountNumber = "",
                 UseMd5Hashing = true,
                 SecretWord = "",
                 AdditionalFee = 0,
@@ -393,16 +334,18 @@ namespace Nop.Plugin.Payments.TwoCheckout
             //locales
             this.AddOrUpdatePluginLocaleResource("Plugins.Payments.2Checkout.RedirectionTip", "You will be redirected to 2Checkout site to complete the order.");
             this.AddOrUpdatePluginLocaleResource("Plugins.Payments.2Checkout.UseSandbox", "Use Sandbox");
-            this.AddOrUpdatePluginLocaleResource("Plugins.Payments.2Checkout.UseSandbox.Hint", "Use sandbox?");
-            this.AddOrUpdatePluginLocaleResource("Plugins.Payments.2Checkout.VendorId", "Vendor ID");
-            this.AddOrUpdatePluginLocaleResource("Plugins.Payments.2Checkout.VendorId.Hint", "Enter vendor ID.");
+            this.AddOrUpdatePluginLocaleResource("Plugins.Payments.2Checkout.UseSandbox.Hint", "Check to enable Sandbox (testing environment).");
+            this.AddOrUpdatePluginLocaleResource("Plugins.Payments.2Checkout.AccountNumber", "Account number");
+            this.AddOrUpdatePluginLocaleResource("Plugins.Payments.2Checkout.AccountNumber.Hint", "Enter account number.");
             this.AddOrUpdatePluginLocaleResource("Plugins.Payments.2Checkout.UseMd5Hashing", "Use MD5 hashing");
-            this.AddOrUpdatePluginLocaleResource("Plugins.Payments.2Checkout.UseMd5Hashing.Hint", "Use MD5 hashing?");
+            this.AddOrUpdatePluginLocaleResource("Plugins.Payments.2Checkout.UseMd5Hashing.Hint", "The MD5 hash is provided to help you verify the authenticity of a sale. This is especially useful for vendors that sell downloadable products, or e - goods, as it can be used to verify whether sale actually came from 2Checkout and was a legitimate live sale.The secret word is set by yourself on the Site Managment page.");
             this.AddOrUpdatePluginLocaleResource("Plugins.Payments.2Checkout.SecretWord", "Secret Word");
             this.AddOrUpdatePluginLocaleResource("Plugins.Payments.2Checkout.SecretWord.Hint", "Enter secret word.");
             this.AddOrUpdatePluginLocaleResource("Plugins.Payments.2Checkout.AdditionalFee", "Additional fee");
             this.AddOrUpdatePluginLocaleResource("Plugins.Payments.2Checkout.AdditionalFee.Hint", "Enter additional fee to charge your customers.");
-            
+            this.AddOrUpdatePluginLocaleResource("Plugins.Payments.2Checkout.AdditionalFeePercentage", "Additional fee. Use percentage");
+            this.AddOrUpdatePluginLocaleResource("Plugins.Payments.2Checkout.AdditionalFeePercentage.Hint", "Determines whether to apply a percentage additional fee to the order total. If not enabled, a fixed value is used.");
+
             base.Install();
         }
 
@@ -415,15 +358,18 @@ namespace Nop.Plugin.Payments.TwoCheckout
             this.DeletePluginLocaleResource("Plugins.Payments.2Checkout.RedirectionTip");
             this.DeletePluginLocaleResource("Plugins.Payments.2Checkout.UseSandbox");
             this.DeletePluginLocaleResource("Plugins.Payments.2Checkout.UseSandbox.Hint");
-            this.DeletePluginLocaleResource("Plugins.Payments.2Checkout.VendorId");
-            this.DeletePluginLocaleResource("Plugins.Payments.2Checkout.VendorId.Hint");
+            this.DeletePluginLocaleResource("Plugins.Payments.2Checkout.AccountNumber");
+            this.DeletePluginLocaleResource("Plugins.Payments.2Checkout.AccountNumber.Hint");
             this.DeletePluginLocaleResource("Plugins.Payments.2Checkout.UseMd5Hashing");
             this.DeletePluginLocaleResource("Plugins.Payments.2Checkout.UseMd5Hashing.Hint");
             this.DeletePluginLocaleResource("Plugins.Payments.2Checkout.SecretWord");
             this.DeletePluginLocaleResource("Plugins.Payments.2Checkout.SecretWord.Hint");
             this.DeletePluginLocaleResource("Plugins.Payments.2Checkout.AdditionalFee");
             this.DeletePluginLocaleResource("Plugins.Payments.2Checkout.AdditionalFee.Hint");
-            
+            this.DeletePluginLocaleResource("Plugins.Payments.2Checkout.AdditionalFeePercentage");
+            this.DeletePluginLocaleResource("Plugins.Payments.2Checkout.AdditionalFeePercentage.Hint");
+
+
             base.Uninstall();
         }
         #endregion

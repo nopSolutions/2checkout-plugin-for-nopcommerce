@@ -16,13 +16,6 @@ namespace Nop.Plugin.Payments.TwoCheckout
                  new { controller = "PaymentTwoCheckout", action = "IPNHandler" },
                  new[] { "Nop.Plugin.Payments.TwoCheckout.Controllers" }
             );
-
-            //Return
-            routes.MapRoute("Plugin.Payments.TwoCheckout.Return",
-                 "Plugins/PaymentTwoCheckout/Return",
-                 new { controller = "PaymentTwoCheckout", action = "Return" },
-                 new[] { "Nop.Plugin.Payments.TwoCheckout.Controllers" }
-            );
         }
 
         #endregion

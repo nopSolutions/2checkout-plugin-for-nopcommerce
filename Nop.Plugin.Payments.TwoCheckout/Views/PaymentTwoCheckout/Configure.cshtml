@@ -1,8 +1,8 @@
 ﻿@{
     Layout = "";
 }
-@model ConfigurationModel
-@using Nop.Plugin.Payments.TwoCheckout.Models;
+@model  Nop.Plugin.Payments.TwoCheckout.Models.ConfigurationModel
+
 @using Nop.Web.Framework;
 @using (Html.BeginForm())
 {
@@ -12,19 +12,14 @@
             <div class="panel-body">
                 <p>
                     <b>If you're using this gateway ensure that your primary store currency is supported
-                    by 2Checkout.</b>
-                    <br />
-                    <br/>
-                    Ensure that all your products have SKU specified
-                    <br/>
-                    <br/>
-                    The MD5 hash is provided to help you verify the authenticity of a sale. This is
-                    especially useful for vendors that sell downloadable products, or e-goods, as it
-                    can be used to verify whether sale actually came from 2Checkout and was a legitimate
-                    live sale. The secret word is set by yourself on the Site Managment page.
-                    <br />
-                    <br />
-                    IPN Handler URL should be set to http://www.yourStore.com/Plugins/PaymentTwoCheckout/IPNHandler
+                        by 2Checkout.</b>
+                </p>
+                <p>
+                    In your 2checkout.com account:
+                    <ol>
+                        <li>in the section «Direct Return» you have to choose the option «Header Redirect»</li>
+                        <li>in the Approved URL specify the address of this type: <b>http://www.yourStore.com/Plugins/PaymentTwoCheckout/IPNHandler</b></li>
+                    </ol>
                 </p>
                 <div class="form-group">
                     <div class="col-md-3">
@@ -37,11 +32,11 @@
                 </div>
                 <div class="form-group">
                     <div class="col-md-3">
-                        @Html.NopLabelFor(model => model.VendorId)
+                        @Html.NopLabelFor(model => model.AccountNumber)
                     </div>
                     <div class="col-md-9">
-                        @Html.NopEditorFor(model => model.VendorId)
-                        @Html.ValidationMessageFor(model => model.VendorId)
+                        @Html.NopEditorFor(model => model.AccountNumber)
+                        @Html.ValidationMessageFor(model => model.AccountNumber)
                     </div>
                 </div>
                 <div class="form-group">
@@ -60,6 +55,15 @@
                     <div class="col-md-9">
                         @Html.NopEditorFor(model => model.SecretWord)
                         @Html.ValidationMessageFor(model => model.SecretWord)
+                    </div>
+                </div>
+                <div class="form-group">
+                    <div class="col-md-3">
+                        @Html.NopLabelFor(model => model.AdditionalFeePercentage)
+                    </div>
+                    <div class="col-md-9">
+                        @Html.NopEditorFor(model => model.AdditionalFeePercentage)
+                        @Html.ValidationMessageFor(model => model.AdditionalFeePercentage)
                     </div>
                 </div>
                 <div class="form-group">

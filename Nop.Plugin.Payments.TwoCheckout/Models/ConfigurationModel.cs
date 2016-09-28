@@ -8,8 +8,8 @@ namespace Nop.Plugin.Payments.TwoCheckout.Models
         [NopResourceDisplayName("Plugins.Payments.2Checkout.UseSandbox")]
         public bool UseSandbox { get; set; }
 
-        [NopResourceDisplayName("Plugins.Payments.2Checkout.VendorId")]
-        public string VendorId { get; set; }
+        [NopResourceDisplayName("Plugins.Payments.2Checkout.AccountNumber")]
+        public string AccountNumber { get; set; }
 
         [NopResourceDisplayName("Plugins.Payments.2Checkout.UseMd5Hashing")]
         public bool UseMd5Hashing { get; set; }
@@ -19,5 +19,8 @@ namespace Nop.Plugin.Payments.TwoCheckout.Models
 
         [NopResourceDisplayName("Plugins.Payments.2Checkout.AdditionalFee")]
         public decimal AdditionalFee { get; set; }
+
+        [NopResourceDisplayName("Plugins.Payments.2Checkout.AdditionalFeePercentage")]
+        public bool AdditionalFeePercentage { get; set; }
     }
 }
