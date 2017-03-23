@@ -32,6 +32,7 @@ namespace Nop.Plugin.Payments.TwoCheckout
         private readonly IOrderTotalCalculationService _orderTotalCalculationService;
         private readonly ICurrencyService _currencyService;
         private readonly CurrencySettings _currencySettings;
+        private readonly ILocalizationService _localizationService;
 
         #endregion
 
@@ -41,13 +42,15 @@ namespace Nop.Plugin.Payments.TwoCheckout
             TwoCheckoutPaymentSettings twoCheckoutPaymentSettings,
             IOrderTotalCalculationService orderTotalCalculationService,
             ICurrencyService currencyService,
-            CurrencySettings currencySettings)
+            CurrencySettings currencySettings,
+            ILocalizationService localizationService)
         {
             this._settingService = settingService;
             this._twoCheckoutPaymentSettings = twoCheckoutPaymentSettings;
             this._orderTotalCalculationService = orderTotalCalculationService;
             this._currencyService = currencyService;
             this._currencySettings = currencySettings;
+            this._localizationService = localizationService;
         }
 
         #endregion
@@ -345,6 +348,7 @@ namespace Nop.Plugin.Payments.TwoCheckout
             this.AddOrUpdatePluginLocaleResource("Plugins.Payments.2Checkout.AdditionalFee.Hint", "Enter additional fee to charge your customers.");
             this.AddOrUpdatePluginLocaleResource("Plugins.Payments.2Checkout.AdditionalFeePercentage", "Additional fee. Use percentage");
             this.AddOrUpdatePluginLocaleResource("Plugins.Payments.2Checkout.AdditionalFeePercentage.Hint", "Determines whether to apply a percentage additional fee to the order total. If not enabled, a fixed value is used.");
+            this.AddOrUpdatePluginLocaleResource("Plugins.Payments.2Checkout.PaymentMethodDescription", "You will be redirected to 2Checkout site to complete the order.");
 
             base.Install();
         }
@@ -368,6 +372,7 @@ namespace Nop.Plugin.Payments.TwoCheckout
             this.DeletePluginLocaleResource("Plugins.Payments.2Checkout.AdditionalFee.Hint");
             this.DeletePluginLocaleResource("Plugins.Payments.2Checkout.AdditionalFeePercentage");
             this.DeletePluginLocaleResource("Plugins.Payments.2Checkout.AdditionalFeePercentage.Hint");
+            this.DeletePluginLocaleResource("Plugins.Payments.2Checkout.PaymentMethodDescription");
 
 
             base.Uninstall();
@@ -448,6 +453,14 @@ namespace Nop.Plugin.Payments.TwoCheckout
         public bool SkipPaymentInfo
         {
             get { return false; }
+        }
+
+        /// <summary>
+        /// Gets a payment method description that will be displayed on checkout pages in the public store
+        /// </summary>
+        public string PaymentMethodDescription
+        {
+            get { return _localizationService.GetResource("Plugins.Payments.2Checkout.PaymentMethodDescription"); }
         }
 
         #endregion

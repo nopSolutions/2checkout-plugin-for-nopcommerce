@@ -75,7 +75,7 @@ namespace Nop.Plugin.Payments.TwoCheckout.Controllers
                 AdditionalFeePercentage = _twoCheckoutPaymentSettings.AdditionalFeePercentage
             };
 
-            return View("~/Plugins/Payments.TwoCheckout/Views/PaymentTwoCheckout/Configure.cshtml", model);
+            return View("~/Plugins/Payments.TwoCheckout/Views/Configure.cshtml", model);
         }
 
         [HttpPost]
@@ -97,13 +97,13 @@ namespace Nop.Plugin.Payments.TwoCheckout.Controllers
 
             SuccessNotification(_localizationService.GetResource("Admin.Plugins.Saved"));
 
-            return View("~/Plugins/Payments.TwoCheckout/Views/PaymentTwoCheckout/Configure.cshtml", model);
+            return View("~/Plugins/Payments.TwoCheckout/Views/Configure.cshtml", model);
         }
 
         [ChildActionOnly]
         public ActionResult PaymentInfo()
         {
-            return View("~/Plugins/Payments.TwoCheckout/Views/PaymentTwoCheckout/PaymentInfo.cshtml");
+            return View("~/Plugins/Payments.TwoCheckout/Views/PaymentInfo.cshtml");
         }
 
         [NonAction]
