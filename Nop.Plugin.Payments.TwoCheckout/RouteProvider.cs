@@ -1,6 +1,6 @@
-﻿using System.Web.Mvc;
-using System.Web.Routing;
-using Nop.Web.Framework.Mvc.Routes;
+﻿using Microsoft.AspNetCore.Routing;
+using Nop.Web.Framework.Mvc.Routing;
+using Microsoft.AspNetCore.Builder;
 
 namespace Nop.Plugin.Payments.TwoCheckout
 {
@@ -8,14 +8,12 @@ namespace Nop.Plugin.Payments.TwoCheckout
     {
         #region Methods
 
-        public void RegisterRoutes(RouteCollection routes)
+        public void RegisterRoutes(IRouteBuilder routeBuilder)
         {
             //IPNHandler
-            routes.MapRoute("Plugin.Payments.TwoCheckout.IPNHandler",
+            routeBuilder.MapRoute("Plugin.Payments.TwoCheckout.IPNHandler",
                  "Plugins/PaymentTwoCheckout/IPNHandler",
-                 new { controller = "PaymentTwoCheckout", action = "IPNHandler" },
-                 new[] { "Nop.Plugin.Payments.TwoCheckout.Controllers" }
-            );
+                 new { controller = "PaymentTwoCheckout", action = "IPNHandler" });
         }
 
         #endregion

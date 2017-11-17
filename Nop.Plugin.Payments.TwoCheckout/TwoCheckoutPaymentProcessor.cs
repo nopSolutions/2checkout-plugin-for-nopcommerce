@@ -2,10 +2,11 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
+using System.Net;
 using System.Security.Cryptography;
 using System.Text;
-using System.Web;
-using System.Web.Routing;
+using Microsoft.AspNetCore.Http;
+using Nop.Core;
 using Nop.Core.Domain.Directory;
 using Nop.Core.Domain.Orders;
 using Nop.Core.Domain.Payments;
@@ -33,6 +34,8 @@ namespace Nop.Plugin.Payments.TwoCheckout
         private readonly ICurrencyService _currencyService;
         private readonly CurrencySettings _currencySettings;
         private readonly ILocalizationService _localizationService;
+        private readonly IWebHelper _webHelper;
+        private readonly IHttpContextAccessor _httpContextAccessor;
 
         #endregion
 
@@ -43,7 +46,9 @@ namespace Nop.Plugin.Payments.TwoCheckout
             IOrderTotalCalculationService orderTotalCalculationService,
             ICurrencyService currencyService,
             CurrencySettings currencySettings,
-            ILocalizationService localizationService)
+            ILocalizationService localizationService,
+            IWebHelper webHelper,
+            IHttpContextAccessor httpContextAccessor)
         {
             this._settingService = settingService;
             this._twoCheckoutPaymentSettings = twoCheckoutPaymentSettings;
@@ -51,6 +56,8 @@ namespace Nop.Plugin.Payments.TwoCheckout
             this._currencyService = currencyService;
             this._currencySettings = currencySettings;
             this._localizationService = localizationService;
+            this._webHelper = webHelper;
+            this._httpContextAccessor = httpContextAccessor;
         }
 
         #endregion
@@ -62,7 +69,7 @@ namespace Nop.Plugin.Payments.TwoCheckout
         /// </summary>
         /// <param name="input">input</param>
         /// <returns>MD5 hash</returns>
-        public string CalculateMD5hash(string input)
+        public string CalculateMD5Hash(string input)
         {
             var md5Hasher = new MD5CryptoServiceProvider();
             var data = md5Hasher.ComputeHash(Encoding.Default.GetBytes(input));
@@ -107,41 +114,41 @@ namespace Nop.Plugin.Payments.TwoCheckout
                 var orderItem = orderProducts[i];
                 var product = orderProducts[i].Product;
 
-                var c_prod = string.Format("c_prod_{0}", pNum);
-                var c_prod_value = string.Format("{0},{1}", product.Sku, orderItem.Quantity);
+                var cProd = $"c_prod_{pNum}";
+                var cProdValue = $"{product.Sku},{orderItem.Quantity}";
 
-                builder.AppendFormat("&{0}={1}", c_prod, c_prod_value);
+                builder.AppendFormat("&{0}={1}", cProd, cProdValue);
 
-                var c_name = string.Format("c_name_{0}", pNum);
-                var c_name_value = product.GetLocalized(x => x.Name);
+                var cName = $"c_name_{pNum}";
+                var cNameValue = product.GetLocalized(x => x.Name);
 
-                builder.AppendFormat("&{0}={1}", HttpUtility.UrlEncode(c_name), HttpUtility.UrlEncode(c_name_value));
+                builder.AppendFormat("&{0}={1}", WebUtility.UrlEncode(cName), WebUtility.UrlEncode(cNameValue));
 
-                var c_description = string.Format("c_description_{0}", pNum);
-                var c_description_value = product.GetLocalized(x => x.Name);
+                var cDescription = $"c_description_{pNum}";
+                var cDescriptionValue = product.GetLocalized(x => x.Name);
 
                 if (!string.IsNullOrEmpty(orderItem.AttributeDescription))
                 {
-                    c_description_value = c_description_value + ". " + orderItem.AttributeDescription;
-                    c_description_value = HtmlHelper.StripTags(c_description_value);
+                    cDescriptionValue = cDescriptionValue + ". " + orderItem.AttributeDescription;
+                    cDescriptionValue = HtmlHelper.StripTags(cDescriptionValue);
                 }
 
-                builder.AppendFormat("&{0}={1}", HttpUtility.UrlEncode(c_description), HttpUtility.UrlEncode(c_description_value));
+                builder.AppendFormat("&{0}={1}", WebUtility.UrlEncode(cDescription), WebUtility.UrlEncode(cDescriptionValue));
 
-                var c_price = string.Format("c_price_{0}", pNum);
-                var c_price_value = orderItem.UnitPriceInclTax.ToString("0.00", CultureInfo.InvariantCulture);
+                var cPrice = $"c_price_{pNum}";
+                var cPriceValue = orderItem.UnitPriceInclTax.ToString("0.00", CultureInfo.InvariantCulture);
 
-                builder.AppendFormat("&{0}={1}", c_price, c_price_value);
+                builder.AppendFormat("&{0}={1}", cPrice, cPriceValue);
 
-                var c_tangible = string.Format("c_tangible_{0}", pNum);
-                var c_tangible_value = "Y";
+                var cTangible = $"c_tangible_{pNum}";
+                var cTangibleValue = "Y";
 
                 if (product.IsDownload)
                 {
-                    c_tangible_value = "N";
+                    cTangibleValue = "N";
                 }
 
-                builder.AppendFormat("&{0}={1}", c_tangible, c_tangible_value);
+                builder.AppendFormat("&{0}={1}", cTangible, cTangibleValue);
             }
 
             builder.AppendFormat("&x_login={0}", _twoCheckoutPaymentSettings.AccountNumber);
@@ -153,28 +160,28 @@ namespace Nop.Plugin.Payments.TwoCheckout
             if (_twoCheckoutPaymentSettings.UseSandbox)
                 builder.AppendFormat("&demo=Y");
 
-            builder.AppendFormat("&x_First_Name={0}", HttpUtility.UrlEncode(postProcessPaymentRequest.Order.BillingAddress.FirstName));
-            builder.AppendFormat("&x_Last_Name={0}", HttpUtility.UrlEncode(postProcessPaymentRequest.Order.BillingAddress.LastName));
-            builder.AppendFormat("&x_Address={0}", HttpUtility.UrlEncode(postProcessPaymentRequest.Order.BillingAddress.Address1));
-            builder.AppendFormat("&x_City={0}", HttpUtility.UrlEncode(postProcessPaymentRequest.Order.BillingAddress.City));
+            builder.AppendFormat("&x_First_Name={0}", WebUtility.UrlEncode(postProcessPaymentRequest.Order.BillingAddress.FirstName));
+            builder.AppendFormat("&x_Last_Name={0}", WebUtility.UrlEncode(postProcessPaymentRequest.Order.BillingAddress.LastName));
+            builder.AppendFormat("&x_Address={0}", WebUtility.UrlEncode(postProcessPaymentRequest.Order.BillingAddress.Address1));
+            builder.AppendFormat("&x_City={0}", WebUtility.UrlEncode(postProcessPaymentRequest.Order.BillingAddress.City));
 
             var billingStateProvince = postProcessPaymentRequest.Order.BillingAddress.StateProvince;
 
             builder.AppendFormat("&x_State={0}", billingStateProvince != null
-                    ? HttpUtility.UrlEncode(billingStateProvince.Abbreviation)
-                    : HttpUtility.UrlEncode(""));
+                    ? WebUtility.UrlEncode(billingStateProvince.Abbreviation)
+                    : WebUtility.UrlEncode(""));
 
-            builder.AppendFormat("&x_Zip={0}", HttpUtility.UrlEncode(postProcessPaymentRequest.Order.BillingAddress.ZipPostalCode));
+            builder.AppendFormat("&x_Zip={0}", WebUtility.UrlEncode(postProcessPaymentRequest.Order.BillingAddress.ZipPostalCode));
 
             var billingCountry = postProcessPaymentRequest.Order.BillingAddress.Country;
 
             builder.AppendFormat("&x_Country={0}", billingCountry != null
-                    ? HttpUtility.UrlEncode(billingCountry.ThreeLetterIsoCode)
-                    : HttpUtility.UrlEncode(""));
+                    ? WebUtility.UrlEncode(billingCountry.ThreeLetterIsoCode)
+                    : WebUtility.UrlEncode(""));
 
-            builder.AppendFormat("&x_EMail={0}", HttpUtility.UrlEncode(postProcessPaymentRequest.Order.BillingAddress.Email));
-            builder.AppendFormat("&x_Phone={0}", HttpUtility.UrlEncode(postProcessPaymentRequest.Order.BillingAddress.PhoneNumber));
-            HttpContext.Current.Response.Redirect(builder.ToString());
+            builder.AppendFormat("&x_EMail={0}", WebUtility.UrlEncode(postProcessPaymentRequest.Order.BillingAddress.Email));
+            builder.AppendFormat("&x_Phone={0}", WebUtility.UrlEncode(postProcessPaymentRequest.Order.BillingAddress.PhoneNumber));
+            _httpContextAccessor.HttpContext.Response.Redirect(builder.ToString());
         }
 
         /// <summary>
@@ -281,36 +288,34 @@ namespace Nop.Plugin.Payments.TwoCheckout
         public bool CanRePostProcessPayment(Order order)
         {
             if (order == null)
-                throw new ArgumentNullException("order");
+                throw new ArgumentNullException(nameof(order));
 
             //do not allow reposting (it can take up to several hours until your order is reviewed
             return false;
         }
 
-        /// <summary>
-        /// Gets a route for provider configuration
-        /// </summary>
-        /// <param name="actionName">Action name</param>
-        /// <param name="controllerName">Controller name</param>
-        /// <param name="routeValues">Route values</param>
-        public void GetConfigurationRoute(out string actionName, out string controllerName, out RouteValueDictionary routeValues)
+        public override string GetConfigurationPageUrl()
         {
-            actionName = "Configure";
-            controllerName = "PaymentTwoCheckout";
-            routeValues = new RouteValueDictionary { { "Namespaces", "Nop.Plugin.Payments.TwoCheckout.Controllers" }, { "area", null } };
+            return $"{_webHelper.GetStoreLocation()}Admin/PaymentTwoCheckout/Configure";
         }
 
-        /// <summary>
-        /// Gets a route for payment info
-        /// </summary>
-        /// <param name="actionName">Action name</param>
-        /// <param name="controllerName">Controller name</param>
-        /// <param name="routeValues">Route values</param>
-        public void GetPaymentInfoRoute(out string actionName, out string controllerName, out RouteValueDictionary routeValues)
+        public IList<string> ValidatePaymentForm(IFormCollection form)
         {
-            actionName = "PaymentInfo";
-            controllerName = "PaymentTwoCheckout";
-            routeValues = new RouteValueDictionary { { "Namespaces", "Nop.Plugin.Payments.TwoCheckout.Controllers" }, { "area", null } };
+            var warnings = new List<string>();
+
+            return warnings;
+        }
+
+        public ProcessPaymentRequest GetPaymentInfo(IFormCollection form)
+        {
+            var paymentInfo = new ProcessPaymentRequest();
+
+            return paymentInfo;
+        }
+
+        public void GetPublicViewComponent(out string viewComponentName)
+        {
+            viewComponentName = "PaymentTwoCheckout";
         }
 
         public Type GetControllerType()
