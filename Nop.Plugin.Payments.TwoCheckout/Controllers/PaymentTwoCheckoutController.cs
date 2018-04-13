@@ -1,5 +1,4 @@
 ﻿using System;
-using System.Globalization;
 using System.Linq;
 using System.Text;
 using Microsoft.AspNetCore.Http;
@@ -38,7 +37,7 @@ namespace Nop.Plugin.Payments.TwoCheckout.Controllers
         #region Ctor
 
         public PaymentTwoCheckoutController(ISettingService settingService,
-            IPaymentService paymentService, 
+            IPaymentService paymentService,
             IOrderService orderService,
             IOrderProcessingService orderProcessingService,
             TwoCheckoutPaymentSettings twoCheckoutPaymentSettings,
@@ -111,25 +110,16 @@ namespace Nop.Plugin.Payments.TwoCheckout.Controllers
 
             return View("~/Plugins/Payments.TwoCheckout/Views/Configure.cshtml", model);
         }
-       
+
         public IActionResult IPNHandler(IpnModel model)
         {
             var form = model.Form;
+
             var processor = _paymentService.LoadPaymentMethodBySystemName("Payments.TwoCheckout") as TwoCheckoutPaymentProcessor;
 
             if (processor == null ||
                 !processor.IsPaymentMethodActive(_paymentSettings) || !processor.PluginDescriptor.Installed)
                 throw new NopException("TwoCheckout module cannot be loaded");
-
-            //x_invoice_num
-            var nopOrderIdStr = GetValue(form, "x_invoice_num");
-            int.TryParse(nopOrderIdStr, out int nopOrderId);
-            var order = _orderService.GetOrderById(nopOrderId);
-
-            if (order == null)
-            {
-                return RedirectToAction("Index", "Home", new { area = "" });
-            }
 
             //debug info
             var sbDebug = new StringBuilder();
@@ -142,8 +132,18 @@ namespace Nop.Plugin.Payments.TwoCheckout.Controllers
                 sbDebug.AppendLine(key + ": " + value);
             }
 
-            if(!form.Keys.Any())
+            if (!form.Keys.Any())
                 sbDebug.AppendLine("url: " + _webHelper.GetThisPageUrl(true));
+
+            //x_invoice_num
+            var nopOrderIdStr = GetValue(form, "item_id_1");
+            int.TryParse(nopOrderIdStr, out var nopOrderId);
+            var order = _orderService.GetOrderById(nopOrderId);
+
+            if (order == null)
+            {
+                return RedirectToAction("Index", "Home", new { area = "" });
+            }
 
             order.OrderNotes.Add(new OrderNote
             {
@@ -153,27 +153,34 @@ namespace Nop.Plugin.Payments.TwoCheckout.Controllers
             });
 
             _orderService.UpdateOrder(order);
-           
-            //invoice id
-            var invoiceID = GetValue(form, "invoice_id") ?? string.Empty;
 
-            //order number
-            var orderNum = _twoCheckoutPaymentSettings.UseSandbox ? "1" : GetValue(form, "order_number");
+            //sale id
+            string saleId;
+            if (_twoCheckoutPaymentSettings.UseSandbox)
+                saleId = "1";
+            else
+                saleId = form["sale_id"];
+            if (saleId == null)
+                saleId = string.Empty;
+
+            //invoice id
+            string invoiceId = form["invoice_id"];
+            if (invoiceId == null)
+                invoiceId = string.Empty;
 
             if (_twoCheckoutPaymentSettings.UseMd5Hashing)
             {
                 var vendorId = _twoCheckoutPaymentSettings.AccountNumber;
                 var secretWord = _twoCheckoutPaymentSettings.SecretWord;
-                var compareHash1 = processor.CalculateMD5Hash(secretWord + vendorId + orderNum + order.OrderTotal.ToString("0.00", CultureInfo.InvariantCulture));
-
+                var compareHash1 = processor.CalculateMD5Hash(saleId + vendorId + invoiceId + secretWord);
                 if (string.IsNullOrEmpty(compareHash1))
                     throw new NopException("2Checkout empty hash string");
 
-                var compareHash2 = GetValue(form, "x_md5_hash") ?? string.Empty;
-                
+                var compareHash2 = GetValue(form, "md5_hash") ?? string.Empty;
+
                 if (compareHash1.ToUpperInvariant() != compareHash2.ToUpperInvariant())
                 {
-                    order.OrderNotes.Add(new OrderNote()
+                    order.OrderNotes.Add(new OrderNote
                     {
                         Note = "Hash validation failed",
                         DisplayToCustomer = false,
@@ -182,7 +189,7 @@ namespace Nop.Plugin.Payments.TwoCheckout.Controllers
 
                     _orderService.UpdateOrder(order);
 
-                    return RedirectToRoute("OrderDetails", new {orderId = order.Id});
+                    return RedirectToRoute("OrderDetails", new { orderId = order.Id });
                 }
             }
 
@@ -208,8 +215,8 @@ namespace Nop.Plugin.Payments.TwoCheckout.Controllers
 
             var sb = new StringBuilder();
             sb.AppendLine("2Checkout IPN:");
-            sb.AppendLine("order_number: " + orderNum);
-            sb.AppendLine("invoice_id: " + invoiceID);
+            sb.AppendLine("sale_id: " + saleId);
+            sb.AppendLine("invoice_id: " + invoiceId);
             sb.AppendLine("message_type: " + messageType);
             sb.AppendLine("invoice_status: " + invoiceStatus);
             sb.AppendLine("fraud_status: " + fraudStatus);
@@ -225,13 +232,11 @@ namespace Nop.Plugin.Payments.TwoCheckout.Controllers
 
             _orderService.UpdateOrder(order);
 
-            if (newPaymentStatus == PaymentStatus.Paid && _orderProcessingService.CanMarkOrderAsPaid(order))
-            {
-                _orderProcessingService.MarkOrderAsPaid(order);
-                return RedirectToRoute("CheckoutCompleted", new {orderId = order.Id});
-            }
+            if (newPaymentStatus != PaymentStatus.Paid || !_orderProcessingService.CanMarkOrderAsPaid(order))
+                return RedirectToRoute("OrderDetails", new {orderId = order.Id});
 
-            return RedirectToRoute("OrderDetails", new {orderId = order.Id});
+            _orderProcessingService.MarkOrderAsPaid(order);
+            return RedirectToRoute("CheckoutCompleted", new { orderId = order.Id });
         }
 
         #endregion
