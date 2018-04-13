@@ -112,9 +112,9 @@ namespace Nop.Plugin.Payments.TwoCheckout.Controllers
             return View("~/Plugins/Payments.TwoCheckout/Views/Configure.cshtml", model);
         }
        
-        public IActionResult IPNHandler()
+        public IActionResult IPNHandler(IpnModel model)
         {
-            var form = Request.Form;
+            var form = model.Form;
             var processor = _paymentService.LoadPaymentMethodBySystemName("Payments.TwoCheckout") as TwoCheckoutPaymentProcessor;
 
             if (processor == null ||
