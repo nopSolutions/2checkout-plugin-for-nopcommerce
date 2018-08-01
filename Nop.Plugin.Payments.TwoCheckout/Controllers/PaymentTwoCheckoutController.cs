@@ -27,7 +27,6 @@ namespace Nop.Plugin.Payments.TwoCheckout.Controllers
         private readonly IOrderService _orderService;
         private readonly IOrderProcessingService _orderProcessingService;
         private readonly TwoCheckoutPaymentSettings _twoCheckoutPaymentSettings;
-        private readonly PaymentSettings _paymentSettings;
         private readonly ILocalizationService _localizationService;
         private readonly IWebHelper _webHelper;
         private readonly IPermissionService _permissionService;
@@ -43,7 +42,6 @@ namespace Nop.Plugin.Payments.TwoCheckout.Controllers
             TwoCheckoutPaymentSettings twoCheckoutPaymentSettings,
             ILocalizationService localizationService,
             IWebHelper webHelper,
-            PaymentSettings paymentSettings,
             IPermissionService permissionService)
         {
             this._settingService = settingService;
@@ -53,7 +51,6 @@ namespace Nop.Plugin.Payments.TwoCheckout.Controllers
             this._twoCheckoutPaymentSettings = twoCheckoutPaymentSettings;
             this._localizationService = localizationService;
             this._webHelper = webHelper;
-            this._paymentSettings = paymentSettings;
             this._permissionService = permissionService;
         }
 
@@ -118,7 +115,7 @@ namespace Nop.Plugin.Payments.TwoCheckout.Controllers
             var processor = _paymentService.LoadPaymentMethodBySystemName("Payments.TwoCheckout") as TwoCheckoutPaymentProcessor;
 
             if (processor == null ||
-                !processor.IsPaymentMethodActive(_paymentSettings) || !processor.PluginDescriptor.Installed)
+                !_paymentService.IsPaymentMethodActive(processor) || !processor.PluginDescriptor.Installed)
                 throw new NopException("TwoCheckout module cannot be loaded");
 
             //debug info
@@ -136,7 +133,7 @@ namespace Nop.Plugin.Payments.TwoCheckout.Controllers
                 sbDebug.AppendLine("url: " + _webHelper.GetThisPageUrl(true));
 
             //x_invoice_num
-            var nopOrderIdStr = GetValue(form, "item_id_1");
+            var nopOrderIdStr = GetValue(form, "x_invoice_num");
             int.TryParse(nopOrderIdStr, out var nopOrderId);
             var order = _orderService.GetOrderById(nopOrderId);
 
@@ -155,16 +152,19 @@ namespace Nop.Plugin.Payments.TwoCheckout.Controllers
             _orderService.UpdateOrder(order);
 
             //sale id
-            string saleId;
-            if (_twoCheckoutPaymentSettings.UseSandbox)
-                saleId = "1";
-            else
-                saleId = form["sale_id"];
+            string saleId = GetValue(form, "merchant_order_id");
             if (saleId == null)
                 saleId = string.Empty;
 
+            //order number:
+            string orderNum;
+            if (_twoCheckoutPaymentSettings.UseSandbox)
+                orderNum = "1";
+            else
+                orderNum = GetValue(form, "order_number");
+
             //invoice id
-            string invoiceId = form["invoice_id"];
+            string invoiceId = GetValue(form, "invoice_id");
             if (invoiceId == null)
                 invoiceId = string.Empty;
 
@@ -172,11 +172,12 @@ namespace Nop.Plugin.Payments.TwoCheckout.Controllers
             {
                 var vendorId = _twoCheckoutPaymentSettings.AccountNumber;
                 var secretWord = _twoCheckoutPaymentSettings.SecretWord;
-                var compareHash1 = processor.CalculateMD5Hash(saleId + vendorId + invoiceId + secretWord);
+                var total =  GetValue(form, "x_amount");
+                var compareHash1 = processor.CalculateMD5Hash(secretWord + vendorId + orderNum + total);
                 if (string.IsNullOrEmpty(compareHash1))
                     throw new NopException("2Checkout empty hash string");
 
-                var compareHash2 = GetValue(form, "md5_hash") ?? string.Empty;
+                var compareHash2 = GetValue(form, "x_md5_hash") ?? string.Empty;
 
                 if (compareHash1.ToUpperInvariant() != compareHash2.ToUpperInvariant())
                 {
@@ -238,6 +239,7 @@ namespace Nop.Plugin.Payments.TwoCheckout.Controllers
             _orderProcessingService.MarkOrderAsPaid(order);
             return RedirectToRoute("CheckoutCompleted", new { orderId = order.Id });
         }
+
 
         #endregion
     }

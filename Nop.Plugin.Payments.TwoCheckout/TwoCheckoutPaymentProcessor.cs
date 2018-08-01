@@ -12,11 +12,9 @@ using Nop.Core.Domain.Orders;
 using Nop.Core.Domain.Payments;
 using Nop.Core.Html;
 using Nop.Core.Plugins;
-using Nop.Plugin.Payments.TwoCheckout.Controllers;
 using Nop.Services.Configuration;
 using Nop.Services.Directory;
 using Nop.Services.Localization;
-using Nop.Services.Orders;
 using Nop.Services.Payments;
 
 namespace Nop.Plugin.Payments.TwoCheckout
@@ -28,36 +26,39 @@ namespace Nop.Plugin.Payments.TwoCheckout
     {
         #region Fields
 
-        private readonly ISettingService _settingService;
-        private readonly TwoCheckoutPaymentSettings _twoCheckoutPaymentSettings;
-        private readonly IOrderTotalCalculationService _orderTotalCalculationService;
         private readonly ICurrencyService _currencyService;
-        private readonly CurrencySettings _currencySettings;
-        private readonly ILocalizationService _localizationService;
-        private readonly IWebHelper _webHelper;
         private readonly IHttpContextAccessor _httpContextAccessor;
+        private readonly ILocalizationService _localizationService;
+        //private readonly IOrderTotalCalculationService _orderTotalCalculationService;
+        private readonly IPaymentService _paymentService;
+        private readonly ISettingService _settingService;
+        private readonly IWebHelper _webHelper;
+        private readonly CurrencySettings _currencySettings;
+        private readonly TwoCheckoutPaymentSettings _twoCheckoutPaymentSettings;
 
         #endregion
 
         #region Ctor
 
-        public TwoCheckoutPaymentProcessor(ISettingService settingService, 
-            TwoCheckoutPaymentSettings twoCheckoutPaymentSettings,
-            IOrderTotalCalculationService orderTotalCalculationService,
-            ICurrencyService currencyService,
-            CurrencySettings currencySettings,
+        public TwoCheckoutPaymentProcessor(ICurrencyService currencyService,
+            IHttpContextAccessor httpContextAccessor,
             ILocalizationService localizationService,
+            //IOrderTotalCalculationService orderTotalCalculationService,
+            IPaymentService paymentService,
+            ISettingService settingService,
             IWebHelper webHelper,
-            IHttpContextAccessor httpContextAccessor)
+            CurrencySettings currencySettings,
+            TwoCheckoutPaymentSettings twoCheckoutPaymentSettings)
         {
-            this._settingService = settingService;
-            this._twoCheckoutPaymentSettings = twoCheckoutPaymentSettings;
-            this._orderTotalCalculationService = orderTotalCalculationService;
             this._currencyService = currencyService;
-            this._currencySettings = currencySettings;
-            this._localizationService = localizationService;
-            this._webHelper = webHelper;
             this._httpContextAccessor = httpContextAccessor;
+            this._localizationService = localizationService;
+            //this._orderTotalCalculationService = orderTotalCalculationService;
+            this._paymentService = paymentService;
+            this._settingService = settingService;
+            this._webHelper = webHelper;
+            this._currencySettings = currencySettings;
+            this._twoCheckoutPaymentSettings = twoCheckoutPaymentSettings;
         }
 
         #endregion
@@ -120,12 +121,12 @@ namespace Nop.Plugin.Payments.TwoCheckout
                 builder.AppendFormat("&{0}={1}", cProd, cProdValue);
 
                 var cName = $"c_name_{pNum}";
-                var cNameValue = product.GetLocalized(x => x.Name);
+                var cNameValue = _localizationService.GetLocalized(product, x => x.Name);
 
                 builder.AppendFormat("&{0}={1}", WebUtility.UrlEncode(cName), WebUtility.UrlEncode(cNameValue));
 
                 var cDescription = $"c_description_{pNum}";
-                var cDescriptionValue = product.GetLocalized(x => x.Name);
+                var cDescriptionValue = _localizationService.GetLocalized(product, x => x.Name);
 
                 if (!string.IsNullOrEmpty(orderItem.AttributeDescription))
                 {
@@ -205,9 +206,8 @@ namespace Nop.Plugin.Payments.TwoCheckout
         /// <returns>Additional handling fee</returns>
         public decimal GetAdditionalHandlingFee(IList<ShoppingCartItem> cart)
         {
-            var result = this.CalculateAdditionalFee(_orderTotalCalculationService, cart,
-                _twoCheckoutPaymentSettings.AdditionalFee, _twoCheckoutPaymentSettings.AdditionalFeePercentage);
-            return result;
+            return _paymentService.CalculateAdditionalFee(cart,
+                    _twoCheckoutPaymentSettings.AdditionalFee, _twoCheckoutPaymentSettings.AdditionalFeePercentage);
         }
 
         /// <summary>
@@ -313,14 +313,9 @@ namespace Nop.Plugin.Payments.TwoCheckout
             return paymentInfo;
         }
 
-        public void GetPublicViewComponent(out string viewComponentName)
+        public string GetPublicViewComponentName()
         {
-            viewComponentName = "PaymentTwoCheckout";
-        }
-
-        public Type GetControllerType()
-        {
-            return typeof(PaymentTwoCheckoutController);
+            return "PaymentTwoCheckout";
         }
 
         /// <summary>
@@ -340,20 +335,20 @@ namespace Nop.Plugin.Payments.TwoCheckout
             _settingService.SaveSetting(settings);
 
             //locales
-            this.AddOrUpdatePluginLocaleResource("Plugins.Payments.2Checkout.RedirectionTip", "You will be redirected to 2Checkout site to complete the order.");
-            this.AddOrUpdatePluginLocaleResource("Plugins.Payments.2Checkout.UseSandbox", "Use Sandbox");
-            this.AddOrUpdatePluginLocaleResource("Plugins.Payments.2Checkout.UseSandbox.Hint", "Check to enable Sandbox (testing environment).");
-            this.AddOrUpdatePluginLocaleResource("Plugins.Payments.2Checkout.AccountNumber", "Account number");
-            this.AddOrUpdatePluginLocaleResource("Plugins.Payments.2Checkout.AccountNumber.Hint", "Enter account number.");
-            this.AddOrUpdatePluginLocaleResource("Plugins.Payments.2Checkout.UseMd5Hashing", "Use MD5 hashing");
-            this.AddOrUpdatePluginLocaleResource("Plugins.Payments.2Checkout.UseMd5Hashing.Hint", "The MD5 hash is provided to help you verify the authenticity of a sale. This is especially useful for vendors that sell downloadable products, or e - goods, as it can be used to verify whether sale actually came from 2Checkout and was a legitimate live sale.The secret word is set by yourself on the Site Managment page.");
-            this.AddOrUpdatePluginLocaleResource("Plugins.Payments.2Checkout.SecretWord", "Secret Word");
-            this.AddOrUpdatePluginLocaleResource("Plugins.Payments.2Checkout.SecretWord.Hint", "Enter secret word.");
-            this.AddOrUpdatePluginLocaleResource("Plugins.Payments.2Checkout.AdditionalFee", "Additional fee");
-            this.AddOrUpdatePluginLocaleResource("Plugins.Payments.2Checkout.AdditionalFee.Hint", "Enter additional fee to charge your customers.");
-            this.AddOrUpdatePluginLocaleResource("Plugins.Payments.2Checkout.AdditionalFeePercentage", "Additional fee. Use percentage");
-            this.AddOrUpdatePluginLocaleResource("Plugins.Payments.2Checkout.AdditionalFeePercentage.Hint", "Determines whether to apply a percentage additional fee to the order total. If not enabled, a fixed value is used.");
-            this.AddOrUpdatePluginLocaleResource("Plugins.Payments.2Checkout.PaymentMethodDescription", "You will be redirected to 2Checkout site to complete the order.");
+            _localizationService.AddOrUpdatePluginLocaleResource("Plugins.Payments.2Checkout.RedirectionTip", "You will be redirected to 2Checkout site to complete the order.");
+            _localizationService.AddOrUpdatePluginLocaleResource("Plugins.Payments.2Checkout.UseSandbox", "Use Sandbox");
+            _localizationService.AddOrUpdatePluginLocaleResource("Plugins.Payments.2Checkout.UseSandbox.Hint", "Check to enable Sandbox (testing environment).");
+            _localizationService.AddOrUpdatePluginLocaleResource("Plugins.Payments.2Checkout.AccountNumber", "Account number");
+            _localizationService.AddOrUpdatePluginLocaleResource("Plugins.Payments.2Checkout.AccountNumber.Hint", "Enter account number.");
+            _localizationService.AddOrUpdatePluginLocaleResource("Plugins.Payments.2Checkout.UseMd5Hashing", "Use MD5 hashing");
+            _localizationService.AddOrUpdatePluginLocaleResource("Plugins.Payments.2Checkout.UseMd5Hashing.Hint", "The MD5 hash is provided to help you verify the authenticity of a sale. This is especially useful for vendors that sell downloadable products, or e - goods, as it can be used to verify whether sale actually came from 2Checkout and was a legitimate live sale.The secret word is set by yourself on the Site Managment page.");
+            _localizationService.AddOrUpdatePluginLocaleResource("Plugins.Payments.2Checkout.SecretWord", "Secret Word");
+            _localizationService.AddOrUpdatePluginLocaleResource("Plugins.Payments.2Checkout.SecretWord.Hint", "Enter secret word.");
+            _localizationService.AddOrUpdatePluginLocaleResource("Plugins.Payments.2Checkout.AdditionalFee", "Additional fee");
+            _localizationService.AddOrUpdatePluginLocaleResource("Plugins.Payments.2Checkout.AdditionalFee.Hint", "Enter additional fee to charge your customers.");
+            _localizationService.AddOrUpdatePluginLocaleResource("Plugins.Payments.2Checkout.AdditionalFeePercentage", "Additional fee. Use percentage");
+            _localizationService.AddOrUpdatePluginLocaleResource("Plugins.Payments.2Checkout.AdditionalFeePercentage.Hint", "Determines whether to apply a percentage additional fee to the order total. If not enabled, a fixed value is used.");
+            _localizationService.AddOrUpdatePluginLocaleResource("Plugins.Payments.2Checkout.PaymentMethodDescription", "You will be redirected to 2Checkout site to complete the order.");
 
             base.Install();
         }
@@ -363,21 +358,23 @@ namespace Nop.Plugin.Payments.TwoCheckout
         /// </summary>
         public override void Uninstall()
         {
+            _settingService.DeleteSetting<TwoCheckoutPaymentSettings>();
+
             //locales
-            this.DeletePluginLocaleResource("Plugins.Payments.2Checkout.RedirectionTip");
-            this.DeletePluginLocaleResource("Plugins.Payments.2Checkout.UseSandbox");
-            this.DeletePluginLocaleResource("Plugins.Payments.2Checkout.UseSandbox.Hint");
-            this.DeletePluginLocaleResource("Plugins.Payments.2Checkout.AccountNumber");
-            this.DeletePluginLocaleResource("Plugins.Payments.2Checkout.AccountNumber.Hint");
-            this.DeletePluginLocaleResource("Plugins.Payments.2Checkout.UseMd5Hashing");
-            this.DeletePluginLocaleResource("Plugins.Payments.2Checkout.UseMd5Hashing.Hint");
-            this.DeletePluginLocaleResource("Plugins.Payments.2Checkout.SecretWord");
-            this.DeletePluginLocaleResource("Plugins.Payments.2Checkout.SecretWord.Hint");
-            this.DeletePluginLocaleResource("Plugins.Payments.2Checkout.AdditionalFee");
-            this.DeletePluginLocaleResource("Plugins.Payments.2Checkout.AdditionalFee.Hint");
-            this.DeletePluginLocaleResource("Plugins.Payments.2Checkout.AdditionalFeePercentage");
-            this.DeletePluginLocaleResource("Plugins.Payments.2Checkout.AdditionalFeePercentage.Hint");
-            this.DeletePluginLocaleResource("Plugins.Payments.2Checkout.PaymentMethodDescription");
+            _localizationService.DeletePluginLocaleResource("Plugins.Payments.2Checkout.RedirectionTip");
+            _localizationService.DeletePluginLocaleResource("Plugins.Payments.2Checkout.UseSandbox");
+            _localizationService.DeletePluginLocaleResource("Plugins.Payments.2Checkout.UseSandbox.Hint");
+            _localizationService.DeletePluginLocaleResource("Plugins.Payments.2Checkout.AccountNumber");
+            _localizationService.DeletePluginLocaleResource("Plugins.Payments.2Checkout.AccountNumber.Hint");
+            _localizationService.DeletePluginLocaleResource("Plugins.Payments.2Checkout.UseMd5Hashing");
+            _localizationService.DeletePluginLocaleResource("Plugins.Payments.2Checkout.UseMd5Hashing.Hint");
+            _localizationService.DeletePluginLocaleResource("Plugins.Payments.2Checkout.SecretWord");
+            _localizationService.DeletePluginLocaleResource("Plugins.Payments.2Checkout.SecretWord.Hint");
+            _localizationService.DeletePluginLocaleResource("Plugins.Payments.2Checkout.AdditionalFee");
+            _localizationService.DeletePluginLocaleResource("Plugins.Payments.2Checkout.AdditionalFee.Hint");
+            _localizationService.DeletePluginLocaleResource("Plugins.Payments.2Checkout.AdditionalFeePercentage");
+            _localizationService.DeletePluginLocaleResource("Plugins.Payments.2Checkout.AdditionalFeePercentage.Hint");
+            _localizationService.DeletePluginLocaleResource("Plugins.Payments.2Checkout.PaymentMethodDescription");
 
 
             base.Uninstall();
