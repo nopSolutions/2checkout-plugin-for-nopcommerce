@@ -1,7 +1,7 @@
 ﻿using System;
 using System.Linq;
+using System.Security.Cryptography;
 using System.Text;
-using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Nop.Core;
 using Nop.Core.Domain.Orders;
@@ -9,6 +9,7 @@ using Nop.Core.Domain.Payments;
 using Nop.Plugin.Payments.TwoCheckout.Models;
 using Nop.Services.Configuration;
 using Nop.Services.Localization;
+using Nop.Services.Messages;
 using Nop.Services.Orders;
 using Nop.Services.Payments;
 using Nop.Services.Security;
@@ -22,46 +23,50 @@ namespace Nop.Plugin.Payments.TwoCheckout.Controllers
     {
         #region Fields
 
-        private readonly ISettingService _settingService;
-        private readonly IPaymentService _paymentService;
-        private readonly IOrderService _orderService;
-        private readonly IOrderProcessingService _orderProcessingService;
-        private readonly TwoCheckoutPaymentSettings _twoCheckoutPaymentSettings;
         private readonly ILocalizationService _localizationService;
-        private readonly IWebHelper _webHelper;
+        private readonly INotificationService _notificationService;
+        private readonly IOrderProcessingService _orderProcessingService;
+        private readonly IOrderService _orderService;
+        private readonly IPaymentPluginManager _paymentPluginManager;
         private readonly IPermissionService _permissionService;
+        private readonly ISettingService _settingService;
+        private readonly IStoreContext _storeContext;
+        private readonly IWebHelper _webHelper;
+        private readonly IWorkContext _workContext;
+        private readonly TwoCheckoutPaymentSettings _twoCheckoutPaymentSettings;
 
         #endregion
 
         #region Ctor
 
-        public PaymentTwoCheckoutController(ISettingService settingService,
-            IPaymentService paymentService,
-            IOrderService orderService,
+        public PaymentTwoCheckoutController(ILocalizationService localizationService,
+            INotificationService notificationService,
             IOrderProcessingService orderProcessingService,
-            TwoCheckoutPaymentSettings twoCheckoutPaymentSettings,
-            ILocalizationService localizationService,
+            IOrderService orderService,
+            IPaymentPluginManager paymentPluginManager,
+            IPermissionService permissionService,
+            ISettingService settingService,
+            IStoreContext storeContext,
             IWebHelper webHelper,
-            IPermissionService permissionService)
+            IWorkContext workContext,
+            TwoCheckoutPaymentSettings twoCheckoutPaymentSettings)
         {
-            this._settingService = settingService;
-            this._paymentService = paymentService;
-            this._orderService = orderService;
-            this._orderProcessingService = orderProcessingService;
-            this._twoCheckoutPaymentSettings = twoCheckoutPaymentSettings;
-            this._localizationService = localizationService;
-            this._webHelper = webHelper;
-            this._permissionService = permissionService;
+            _localizationService = localizationService;
+            _notificationService = notificationService;
+            _orderProcessingService = orderProcessingService;
+            _orderService = orderService;
+            _paymentPluginManager = paymentPluginManager;
+            _permissionService = permissionService;
+            _settingService = settingService;
+            _storeContext = storeContext;
+            _webHelper = webHelper;
+            _workContext = workContext;
+            _twoCheckoutPaymentSettings = twoCheckoutPaymentSettings;
         }
 
         #endregion
 
         #region Methods
-
-        private string GetValue(IFormCollection form, string key)
-        {
-            return form.Keys.Any(k => k == key) ? form[key].ToString() : _webHelper.QueryString<string>(key);
-        }
 
         [AuthorizeAdmin]
         [Area(AreaNames.Admin)]
@@ -72,10 +77,9 @@ namespace Nop.Plugin.Payments.TwoCheckout.Controllers
 
             var model = new ConfigurationModel
             {
-                UseSandbox = _twoCheckoutPaymentSettings.UseSandbox,
                 AccountNumber = _twoCheckoutPaymentSettings.AccountNumber,
-                UseMd5Hashing = _twoCheckoutPaymentSettings.UseMd5Hashing,
                 SecretWord = _twoCheckoutPaymentSettings.SecretWord,
+                UseSandbox = _twoCheckoutPaymentSettings.UseSandbox,
                 AdditionalFee = _twoCheckoutPaymentSettings.AdditionalFee,
                 AdditionalFeePercentage = _twoCheckoutPaymentSettings.AdditionalFeePercentage
             };
@@ -86,6 +90,7 @@ namespace Nop.Plugin.Payments.TwoCheckout.Controllers
         [HttpPost]
         [AuthorizeAdmin]
         [Area(AreaNames.Admin)]
+        [AdminAntiForgery]
         public IActionResult Configure(ConfigurationModel model)
         {
             if (!_permissionService.Authorize(StandardPermissionProvider.ManagePaymentMethods))
@@ -95,91 +100,88 @@ namespace Nop.Plugin.Payments.TwoCheckout.Controllers
                 return Configure();
 
             //save settings
-            _twoCheckoutPaymentSettings.UseSandbox = model.UseSandbox;
             _twoCheckoutPaymentSettings.AccountNumber = model.AccountNumber;
-            _twoCheckoutPaymentSettings.UseMd5Hashing = model.UseMd5Hashing;
             _twoCheckoutPaymentSettings.SecretWord = model.SecretWord;
+            _twoCheckoutPaymentSettings.UseSandbox = model.UseSandbox;
             _twoCheckoutPaymentSettings.AdditionalFee = model.AdditionalFee;
             _twoCheckoutPaymentSettings.AdditionalFeePercentage = model.AdditionalFeePercentage;
             _settingService.SaveSetting(_twoCheckoutPaymentSettings);
 
-            SuccessNotification(_localizationService.GetResource("Admin.Plugins.Saved"));
+            _notificationService.SuccessNotification(_localizationService.GetResource("Admin.Plugins.Saved"));
 
-            return View("~/Plugins/Payments.TwoCheckout/Views/Configure.cshtml", model);
+            return Configure();
         }
 
-        public IActionResult IPNHandler(IpnModel model)
+        public IActionResult IPNHandler()
         {
-            var form = model.Form;
-
-            var processor = _paymentService.LoadPaymentMethodBySystemName("Payments.TwoCheckout") as TwoCheckoutPaymentProcessor;
-
-            if (processor == null ||
-                !_paymentService.IsPaymentMethodActive(processor) || !processor.PluginDescriptor.Installed)
-                throw new NopException("TwoCheckout module cannot be loaded");
-
-            //debug info
-            var sbDebug = new StringBuilder();
-            sbDebug.AppendLine("2Checkout IPN:");
-
-            foreach (var key in form.Keys)
+            //ensure this payment method is active
+            if (!_paymentPluginManager.IsPluginActive(TwoCheckoutDefaults.SystemName,
+                _workContext.CurrentCustomer, _storeContext.CurrentStore.Id))
             {
-                var value = form[key];
-
-                sbDebug.AppendLine(key + ": " + value);
+                throw new NopException("2Checkout module cannot be loaded");
             }
 
-            if (!form.Keys.Any())
-                sbDebug.AppendLine("url: " + _webHelper.GetThisPageUrl(true));
+            //define local function to get a value from the request Form or from the Query parameters
+            string getValue(string key) =>
+                Request.HasFormContentType && Request.Form.TryGetValue(key, out var value)
+                ? value.ToString()
+                : _webHelper.QueryString<string>(key)
+                ?? string.Empty;
 
-            //x_invoice_num
-            var nopOrderIdStr = GetValue(form, "x_invoice_num");
-            int.TryParse(nopOrderIdStr, out var nopOrderId);
-            var order = _orderService.GetOrderById(nopOrderId);
-
+            //get order
+            var customOrderNumber = getValue("x_invoice_num");
+            var order = _orderService.GetOrderByCustomOrderNumber(customOrderNumber);
             if (order == null)
             {
-                return RedirectToAction("Index", "Home", new { area = "" });
+                //try to get order by the order identifier (used in previous plugin versions)
+                int.TryParse(customOrderNumber, out var orderId);
+                order = _orderService.GetOrderById(orderId);
+                if (order == null)
+                    return RedirectToRoute("Homepage");
             }
 
+            //save request info as order note for debug purposes
+            var info = new StringBuilder();
+            info.AppendLine("2Checkout IPN:");
+            if (Request.HasFormContentType && Request.Form.Keys.Any())
+            {
+                //form parameters
+                foreach (var key in Request.Form.Keys)
+                {
+                    info.AppendLine($"{key}: {Request.Form[key]}");
+                }
+            }
+            else
+            {
+                //query parameters
+                info.AppendLine(Request.QueryString.ToString());
+            }
             order.OrderNotes.Add(new OrderNote
             {
-                Note = sbDebug.ToString(),
+                Note = info.ToString(),
                 DisplayToCustomer = false,
                 CreatedOnUtc = DateTime.UtcNow
             });
-
             _orderService.UpdateOrder(order);
 
-            //sale id
-            string saleId = GetValue(form, "merchant_order_id");
-            if (saleId == null)
-                saleId = string.Empty;
-
-            //order number:
-            string orderNum;
-            if (_twoCheckoutPaymentSettings.UseSandbox)
-                orderNum = "1";
-            else
-                orderNum = GetValue(form, "order_number");
-
-            //invoice id
-            string invoiceId = GetValue(form, "invoice_id");
-            if (invoiceId == null)
-                invoiceId = string.Empty;
-
+            //verify the passed data by comparing MD5 hashes
             if (_twoCheckoutPaymentSettings.UseMd5Hashing)
             {
-                var vendorId = _twoCheckoutPaymentSettings.AccountNumber;
-                var secretWord = _twoCheckoutPaymentSettings.SecretWord;
-                var total =  GetValue(form, "x_amount");
-                var compareHash1 = processor.CalculateMD5Hash(secretWord + vendorId + orderNum + total);
-                if (string.IsNullOrEmpty(compareHash1))
-                    throw new NopException("2Checkout empty hash string");
+                var stringToHash = $"{_twoCheckoutPaymentSettings.SecretWord}" +
+                    $"{_twoCheckoutPaymentSettings.AccountNumber}" +
+                    $"{(_twoCheckoutPaymentSettings.UseSandbox ? "1" : getValue("order_number"))}" +
+                    $"{getValue("x_amount")}";
+                var data = new MD5CryptoServiceProvider().ComputeHash(Encoding.Default.GetBytes(stringToHash));
+                var sBuilder = new StringBuilder();
+                foreach (var t in data)
+                {
+                    sBuilder.Append(t.ToString("x2"));
+                }
 
-                var compareHash2 = GetValue(form, "x_md5_hash") ?? string.Empty;
+                var computedHash = sBuilder.ToString();
+                var receivedHash = getValue("x_md5_hash");
 
-                if (compareHash1.ToUpperInvariant() != compareHash2.ToUpperInvariant())
+                if (computedHash.ToUpperInvariant() != receivedHash.ToUpperInvariant())
                 {
                     order.OrderNotes.Add(new OrderNote
                     {
@@ -187,26 +189,18 @@ namespace Nop.Plugin.Payments.TwoCheckout.Controllers
                         DisplayToCustomer = false,
                         CreatedOnUtc = DateTime.UtcNow
                     });
-
                     _orderService.UpdateOrder(order);
 
                     return RedirectToRoute("OrderDetails", new { orderId = order.Id });
                 }
             }
 
-            var messageType = GetValue(form, "message_type") ?? string.Empty;
-            var invoiceStatus = GetValue(form, "invoice_status") ?? string.Empty;
-            var fraudStatus = GetValue(form, "fraud_status") ?? string.Empty;
-            var paymentType = GetValue(form, "payment_type") ?? string.Empty;
-
             var newPaymentStatus = PaymentStatus.Pending;
 
-            if (messageType.ToUpperInvariant() == "FRAUD_STATUS_CHANGED"
-               && fraudStatus == "pass"
-               && (invoiceStatus == "approved" || paymentType == "paypal ec"))
-            {
-                newPaymentStatus = PaymentStatus.Paid;
-            }
+            var messageType = getValue("message_type");
+            var invoiceStatus = getValue("invoice_status");
+            var fraudStatus = getValue("fraud_status");
+            var paymentType = getValue("payment_type");
 
             //from documentation (https://www.2checkout.com/documentation/checkout/return):
             //if your return method is set to Direct Return or Header Redirect, 
@@ -214,32 +208,20 @@ namespace Nop.Plugin.Payments.TwoCheckout.Controllers
             if (messageType + invoiceStatus + fraudStatus + paymentType == string.Empty)
                 newPaymentStatus = PaymentStatus.Paid;
 
-            var sb = new StringBuilder();
-            sb.AppendLine("2Checkout IPN:");
-            sb.AppendLine("sale_id: " + saleId);
-            sb.AppendLine("invoice_id: " + invoiceId);
-            sb.AppendLine("message_type: " + messageType);
-            sb.AppendLine("invoice_status: " + invoiceStatus);
-            sb.AppendLine("fraud_status: " + fraudStatus);
-            sb.AppendLine("payment_type: " + paymentType);
-            sb.AppendLine("New payment status: " + newPaymentStatus);
-
-            order.OrderNotes.Add(new OrderNote
+            if (messageType.ToUpperInvariant() == "FRAUD_STATUS_CHANGED"
+               && fraudStatus == "pass"
+               && (invoiceStatus == "approved" || invoiceStatus == "deposited" || paymentType == "paypal ec"))
             {
-                Note = sb.ToString(),
-                DisplayToCustomer = false,
-                CreatedOnUtc = DateTime.UtcNow
-            });
-
-            _orderService.UpdateOrder(order);
+                newPaymentStatus = PaymentStatus.Paid;
+            }
 
             if (newPaymentStatus != PaymentStatus.Paid || !_orderProcessingService.CanMarkOrderAsPaid(order))
-                return RedirectToRoute("OrderDetails", new {orderId = order.Id});
+                return RedirectToRoute("OrderDetails", new { orderId = order.Id });
 
+            //mark order as paid
             _orderProcessingService.MarkOrderAsPaid(order);
             return RedirectToRoute("CheckoutCompleted", new { orderId = order.Id });
         }
-
 
         #endregion
     }

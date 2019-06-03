@@ -1,24 +1,31 @@
-﻿@{
+﻿@model ConfigurationModel
+
+@using Nop.Plugin.Payments.TwoCheckout
+@using Nop.Plugin.Payments.TwoCheckout.Models
+@inject Nop.Core.IWebHelper webHelper
+
+@{
     Layout = "_ConfigurePlugin";
 }
-@model  Nop.Plugin.Payments.TwoCheckout.Models.ConfigurationModel
 
 <form asp-controller="PaymentTwoCheckout" asp-action="Configure" method="post">
     <div class="panel-group">
         <div class="panel panel-default">
             <div class="panel-body">
                 <p>
-                    <b>
-                        If you're using this gateway ensure that your primary store currency is supported
-                        by 2Checkout.
-                    </b>
+                    To configure the 2checkout plugin for nopCommerce.<br />
+                    <br />
+                    1. Log into either the <a href="https://sandbox.2checkout.com/sandbox" target="_blank">2checkout sandbox</a> or <a href="https://www.2checkout.com/signin/" target="_blank">2checkout production</a> merchant account.<br />
+                    2. Find, copy and paste your Account Number below in the Account Number field.<br />
+                    3. On the main menu select "Account" then "Site Management".<br />
+                    4. Find Secret Word under "Checkout Options", you need to generate it if the field is empty. Paste your Secret Word below.<br />
+                    5. In the section "Direct Return" you have to choose the option Header Redirect.<br />
+                    6. Copy this URL: <em>@Url.RouteUrl(TwoCheckoutDefaults.IpnRouteName, null, webHelper.CurrentRequestProtocol)</em> and paste it into "Approved URL".<br />
+                    7. Save the configuration.<br />
                 </p>
                 <p>
-                    In your 2checkout.com account:
-                    <ol>
-                        <li>in the section «Direct Return» you have to choose the option «Header Redirect»</li>
-                        <li>in the Approved URL specify the address of this type: <b>http://www.yourStore.com/Plugins/PaymentTwoCheckout/IPNHandler</b></li>
-                    </ol>
+                    <em>Notes:</em><br />
+                    For this plugin to work properly ensure that your primary store currency is supported by 2Checkout.<br />
                 </p>
                 <div class="form-group">
                     <div class="col-md-3">
@@ -34,17 +41,8 @@
                         <nop-label asp-for="AccountNumber" />
                     </div>
                     <div class="col-md-9">
-                        <nop-editor asp-for="AccountNumber" />
+                        <nop-editor asp-for="AccountNumber" asp-required="true" />
                         <span asp-validation-for="AccountNumber"></span>
-                    </div>
-                </div>
-                <div class="form-group">
-                    <div class="col-md-3">
-                        <nop-label asp-for="UseMd5Hashing" />
-                    </div>
-                    <div class="col-md-9">
-                        <nop-editor asp-for="UseMd5Hashing" />
-                        <span asp-validation-for="UseMd5Hashing"></span>
                     </div>
                 </div>
                 <div class="form-group">
@@ -52,17 +50,8 @@
                         <nop-label asp-for="SecretWord" />
                     </div>
                     <div class="col-md-9">
-                        <nop-editor asp-for="SecretWord" />
+                        <nop-editor asp-for="SecretWord" asp-value="@Model.SecretWord" asp-required="true" />
                         <span asp-validation-for="SecretWord"></span>
-                    </div>
-                </div>
-                <div class="form-group">
-                    <div class="col-md-3">
-                        <nop-label asp-for="AdditionalFeePercentage" />
-                    </div>
-                    <div class="col-md-9">
-                        <nop-editor asp-for="AdditionalFeePercentage" />
-                        <span asp-validation-for="AdditionalFeePercentage"></span>
                     </div>
                 </div>
                 <div class="form-group">
@@ -72,6 +61,15 @@
                     <div class="col-md-9">
                         <nop-editor asp-for="AdditionalFee" />
                         <span asp-validation-for="AdditionalFee"></span>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <div class="col-md-3">
+                        <nop-label asp-for="AdditionalFeePercentage" />
+                    </div>
+                    <div class="col-md-9">
+                        <nop-editor asp-for="AdditionalFeePercentage" />
+                        <span asp-validation-for="AdditionalFeePercentage"></span>
                     </div>
                 </div>
                 <div class="form-group">
