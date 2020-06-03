@@ -1,5 +1,6 @@
 ﻿using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Routing;
+using Nop.Web.Framework;
 using Nop.Web.Framework.Mvc.Routing;
 
 namespace Nop.Plugin.Payments.TwoCheckout.Infrastructure
@@ -12,12 +13,14 @@ namespace Nop.Plugin.Payments.TwoCheckout.Infrastructure
         /// <summary>
         /// Register routes
         /// </summary>
-        /// <param name="routeBuilder">Route builder</param>
-        public void RegisterRoutes(IRouteBuilder routeBuilder)
+        /// <param name="endpointRouteBuilder">Route builder</param>
+        public void RegisterRoutes(IEndpointRouteBuilder endpointRouteBuilder)
         {
-            //add route to the IPN handler
-            routeBuilder.MapRoute(TwoCheckoutDefaults.IpnRouteName, "Plugins/PaymentTwoCheckout/IPNHandler",
-                 new { controller = "PaymentTwoCheckout", action = "IPNHandler" });
+            endpointRouteBuilder.MapControllerRoute(TwoCheckoutDefaults.ConfigurationRouteName, "Plugins/PaymentTwoCheckout/Configure",
+                new { controller = "PaymentTwoCheckout", action = "Configure", area = AreaNames.Admin });
+
+            endpointRouteBuilder.MapControllerRoute(TwoCheckoutDefaults.IpnRouteName, "Plugins/PaymentTwoCheckout/IPNHandler",
+                new { controller = "PaymentTwoCheckoutIpn", action = "IPNHandler" });
         }
 
         /// <summary>

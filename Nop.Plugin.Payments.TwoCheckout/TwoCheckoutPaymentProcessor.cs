@@ -1,17 +1,22 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Globalization;
-using System.Linq;
 using System.Net;
 using System.Text;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc.Infrastructure;
+using Microsoft.AspNetCore.Mvc.Routing;
 using Nop.Core;
 using Nop.Core.Domain.Directory;
 using Nop.Core.Domain.Orders;
 using Nop.Core.Html;
+using Nop.Services.Catalog;
+using Nop.Services.Common;
 using Nop.Services.Configuration;
 using Nop.Services.Directory;
 using Nop.Services.Localization;
+using Nop.Services.Orders;
 using Nop.Services.Payments;
 using Nop.Services.Plugins;
 
@@ -25,12 +30,17 @@ namespace Nop.Plugin.Payments.TwoCheckout
         #region Fields
 
         private readonly CurrencySettings _currencySettings;
+        private readonly IActionContextAccessor _actionContextAccessor;
+        private readonly IAddressService _addressService;
+        private readonly ICountryService _countryService;
         private readonly ICurrencyService _currencyService;
-        private readonly IHttpContextAccessor _httpContextAccessor;
         private readonly ILocalizationService _localizationService;
+        private readonly IOrderService _orderService;
         private readonly IPaymentService _paymentService;
+        private readonly IProductService _productService;
         private readonly ISettingService _settingService;
-        private readonly IWebHelper _webHelper;
+        private readonly IStateProvinceService _stateProvinceService;
+        private readonly IUrlHelperFactory _urlHelperFactory;
         private readonly TwoCheckoutPaymentSettings _twoCheckoutPaymentSettings;
 
         #endregion
@@ -38,21 +48,31 @@ namespace Nop.Plugin.Payments.TwoCheckout
         #region Ctor
 
         public TwoCheckoutPaymentProcessor(CurrencySettings currencySettings,
+            IActionContextAccessor actionContextAccessor,
+            IAddressService addressService,
+            ICountryService countryService,
             ICurrencyService currencyService,
-            IHttpContextAccessor httpContextAccessor,
             ILocalizationService localizationService,
+            IOrderService orderService,
             IPaymentService paymentService,
+            IProductService productService,
             ISettingService settingService,
-            IWebHelper webHelper,
+            IStateProvinceService stateProvinceService,
+            IUrlHelperFactory urlHelperFactory,
             TwoCheckoutPaymentSettings twoCheckoutPaymentSettings)
         {
             _currencySettings = currencySettings;
+            _actionContextAccessor = actionContextAccessor;
+            _addressService = addressService;
+            _countryService = countryService;
             _currencyService = currencyService;
-            _httpContextAccessor = httpContextAccessor;
             _localizationService = localizationService;
+            _orderService = orderService;
             _paymentService = paymentService;
+            _productService = productService;
             _settingService = settingService;
-            _webHelper = webHelper;
+            _stateProvinceService = stateProvinceService;
+            _urlHelperFactory = urlHelperFactory;
             _twoCheckoutPaymentSettings = twoCheckoutPaymentSettings;
         }
 
@@ -78,20 +98,15 @@ namespace Nop.Plugin.Payments.TwoCheckout
         {
             var builder = new StringBuilder();
 
-            var purchaseUrl = _twoCheckoutPaymentSettings.UseSandbox
-                ? "https://sandbox.2checkout.com/checkout/purchase"
-                : "https://www.2checkout.com/checkout/purchase";
-
-            builder.AppendFormat("{0}?id_type=1", purchaseUrl);
+            builder.AppendFormat("{0}?id_type=1", TwoCheckoutDefaults.ServiceUrl);
 
             //products
-            var orderProducts = postProcessPaymentRequest.Order.OrderItems.ToList();
-
+            var orderProducts = _orderService.GetOrderItems(postProcessPaymentRequest.Order.Id);
             for (var i = 0; i < orderProducts.Count; i++)
             {
                 var pNum = i + 1;
                 var orderItem = orderProducts[i];
-                var product = orderProducts[i].Product;
+                var product = _productService.GetProductById(orderProducts[i].ProductId);
 
                 var cProd = $"c_prod_{pNum}";
                 var cProdValue = $"{product.Sku},{orderItem.Quantity}";
@@ -125,26 +140,24 @@ namespace Nop.Plugin.Payments.TwoCheckout
             if (_twoCheckoutPaymentSettings.UseSandbox)
                 builder.AppendFormat("&demo=Y");
 
-            builder.AppendFormat("&x_First_Name={0}",
-                WebUtility.UrlEncode(postProcessPaymentRequest.Order.BillingAddress?.FirstName ?? string.Empty));
-            builder.AppendFormat("&x_Last_Name={0}",
-                WebUtility.UrlEncode(postProcessPaymentRequest.Order.BillingAddress?.LastName ?? string.Empty));
-            builder.AppendFormat("&x_Address={0}",
-                WebUtility.UrlEncode(postProcessPaymentRequest.Order.BillingAddress?.Address1 ?? string.Empty));
-            builder.AppendFormat("&x_City={0}",
-                WebUtility.UrlEncode(postProcessPaymentRequest.Order.BillingAddress?.City ?? string.Empty));
-            builder.AppendFormat("&x_State={0}",
-                WebUtility.UrlEncode(postProcessPaymentRequest.Order.BillingAddress?.StateProvince?.Abbreviation ?? string.Empty));
-            builder.AppendFormat("&x_Country={0}",
-                WebUtility.UrlEncode(postProcessPaymentRequest.Order.BillingAddress?.Country?.ThreeLetterIsoCode ?? string.Empty));
-            builder.AppendFormat("&x_Zip={0}",
-                WebUtility.UrlEncode(postProcessPaymentRequest.Order.BillingAddress?.ZipPostalCode ?? string.Empty));
-            builder.AppendFormat("&x_EMail={0}",
-                WebUtility.UrlEncode(postProcessPaymentRequest.Order.BillingAddress?.Email ?? string.Empty));
-            builder.AppendFormat("&x_Phone={0}",
-                WebUtility.UrlEncode(postProcessPaymentRequest.Order.BillingAddress?.PhoneNumber ?? string.Empty));
+            var billingAddress = _addressService.GetAddressById(postProcessPaymentRequest.Order.BillingAddressId);
+            if (billingAddress != null)
+            {
+                var country = _countryService.GetCountryById(billingAddress.CountryId ?? 0);
+                var state = _stateProvinceService.GetStateProvinceById(billingAddress.StateProvinceId ?? 0);
+                builder.AppendFormat("&x_First_Name={0}", WebUtility.UrlEncode(billingAddress.FirstName ?? string.Empty));
+                builder.AppendFormat("&x_Last_Name={0}", WebUtility.UrlEncode(billingAddress.LastName ?? string.Empty));
+                builder.AppendFormat("&x_Address={0}", WebUtility.UrlEncode(billingAddress.Address1 ?? string.Empty));
+                builder.AppendFormat("&x_City={0}", WebUtility.UrlEncode(billingAddress.City ?? string.Empty));
+                builder.AppendFormat("&x_State={0}", WebUtility.UrlEncode(state?.Abbreviation ?? string.Empty));
+                builder.AppendFormat("&x_Country={0}", WebUtility.UrlEncode(country?.ThreeLetterIsoCode ?? string.Empty));
+                builder.AppendFormat("&x_Zip={0}", WebUtility.UrlEncode(billingAddress.ZipPostalCode ?? string.Empty));
+                builder.AppendFormat("&x_EMail={0}", WebUtility.UrlEncode(billingAddress.Email ?? string.Empty));
+                builder.AppendFormat("&x_Phone={0}", WebUtility.UrlEncode(CommonHelper.EnsureNumericOnly(billingAddress.PhoneNumber) ?? string.Empty));
+            }
 
-            _httpContextAccessor.HttpContext.Response.Redirect(builder.ToString());
+            var redirectUrl = builder.ToString();
+            _actionContextAccessor.ActionContext.HttpContext.Response.Redirect(redirectUrl);
         }
 
         /// <summary>
@@ -260,7 +273,7 @@ namespace Nop.Plugin.Payments.TwoCheckout
         /// </summary>
         public override string GetConfigurationPageUrl()
         {
-            return $"{_webHelper.GetStoreLocation()}Admin/PaymentTwoCheckout/Configure";
+            return _urlHelperFactory.GetUrlHelper(_actionContextAccessor.ActionContext).RouteUrl(TwoCheckoutDefaults.ConfigurationRouteName);
         }
 
         /// <summary>
@@ -285,18 +298,21 @@ namespace Nop.Plugin.Payments.TwoCheckout
             });
 
             //locales
-            _localizationService.AddOrUpdatePluginLocaleResource("Plugins.Payments.2Checkout.AccountNumber", "Account number");
-            _localizationService.AddOrUpdatePluginLocaleResource("Plugins.Payments.2Checkout.AccountNumber.Hint", "Enter account number.");
-            _localizationService.AddOrUpdatePluginLocaleResource("Plugins.Payments.2Checkout.AdditionalFee", "Additional fee");
-            _localizationService.AddOrUpdatePluginLocaleResource("Plugins.Payments.2Checkout.AdditionalFee.Hint", "Enter additional fee to charge your customers.");
-            _localizationService.AddOrUpdatePluginLocaleResource("Plugins.Payments.2Checkout.AdditionalFeePercentage", "Additional fee. Use percentage");
-            _localizationService.AddOrUpdatePluginLocaleResource("Plugins.Payments.2Checkout.AdditionalFeePercentage.Hint", "Determines whether to apply a percentage additional fee to the order total. If not enabled, a fixed value is used.");
-            _localizationService.AddOrUpdatePluginLocaleResource("Plugins.Payments.2Checkout.PaymentMethodDescription", "You will be redirected to 2Checkout site to complete the order.");
-            _localizationService.AddOrUpdatePluginLocaleResource("Plugins.Payments.2Checkout.RedirectionTip", "You will be redirected to 2Checkout site to complete the order.");
-            _localizationService.AddOrUpdatePluginLocaleResource("Plugins.Payments.2Checkout.SecretWord", "Secret Word");
-            _localizationService.AddOrUpdatePluginLocaleResource("Plugins.Payments.2Checkout.SecretWord.Hint", "Enter secret word.");
-            _localizationService.AddOrUpdatePluginLocaleResource("Plugins.Payments.2Checkout.UseSandbox", "Use Sandbox");
-            _localizationService.AddOrUpdatePluginLocaleResource("Plugins.Payments.2Checkout.UseSandbox.Hint", "Check to enable Sandbox (testing environment).");
+            _localizationService.AddPluginLocaleResource(new Dictionary<string, string>
+            {
+                ["Plugins.Payments.2Checkout.AccountNumber"] = "Account number",
+                ["Plugins.Payments.2Checkout.AccountNumber.Hint"] = "Enter account number.",
+                ["Plugins.Payments.2Checkout.AdditionalFee"] = "Additional fee",
+                ["Plugins.Payments.2Checkout.AdditionalFee.Hint"] = "Enter additional fee to charge your customers.",
+                ["Plugins.Payments.2Checkout.AdditionalFeePercentage"] = "Additional fee. Use percentage",
+                ["Plugins.Payments.2Checkout.AdditionalFeePercentage.Hint"] = "Determines whether to apply a percentage additional fee to the order total. If not enabled, a fixed value is used.",
+                ["Plugins.Payments.2Checkout.PaymentMethodDescription"] = "You will be redirected to 2Checkout site to complete the order.",
+                ["Plugins.Payments.2Checkout.RedirectionTip"] = "You will be redirected to 2Checkout site to complete the order.",
+                ["Plugins.Payments.2Checkout.SecretWord"] = "Secret Word",
+                ["Plugins.Payments.2Checkout.SecretWord.Hint"] = "Enter secret word.",
+                ["Plugins.Payments.2Checkout.UseSandbox"] = "Use Sandbox",
+                ["Plugins.Payments.2Checkout.UseSandbox.Hint"] = "Check to enable Sandbox (testing environment)."
+            });
 
             base.Install();
         }
@@ -310,18 +326,7 @@ namespace Nop.Plugin.Payments.TwoCheckout
             _settingService.DeleteSetting<TwoCheckoutPaymentSettings>();
 
             //locales
-            _localizationService.DeletePluginLocaleResource("Plugins.Payments.2Checkout.AccountNumber");
-            _localizationService.DeletePluginLocaleResource("Plugins.Payments.2Checkout.AccountNumber.Hint");
-            _localizationService.DeletePluginLocaleResource("Plugins.Payments.2Checkout.AdditionalFee");
-            _localizationService.DeletePluginLocaleResource("Plugins.Payments.2Checkout.AdditionalFee.Hint");
-            _localizationService.DeletePluginLocaleResource("Plugins.Payments.2Checkout.AdditionalFeePercentage");
-            _localizationService.DeletePluginLocaleResource("Plugins.Payments.2Checkout.AdditionalFeePercentage.Hint");
-            _localizationService.DeletePluginLocaleResource("Plugins.Payments.2Checkout.PaymentMethodDescription");
-            _localizationService.DeletePluginLocaleResource("Plugins.Payments.2Checkout.RedirectionTip");
-            _localizationService.DeletePluginLocaleResource("Plugins.Payments.2Checkout.SecretWord");
-            _localizationService.DeletePluginLocaleResource("Plugins.Payments.2Checkout.SecretWord.Hint");
-            _localizationService.DeletePluginLocaleResource("Plugins.Payments.2Checkout.UseSandbox");
-            _localizationService.DeletePluginLocaleResource("Plugins.Payments.2Checkout.UseSandbox.Hint");
+            _localizationService.DeletePluginLocaleResources("Plugins.Payments.2Checkout");
 
             base.Uninstall();
         }

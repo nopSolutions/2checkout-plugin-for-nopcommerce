@@ -16,7 +16,17 @@
         public static string SystemName => "Payments.TwoCheckout";
 
         /// <summary>
-        /// Gets IPN handler route name
+        /// Gets the service URL
+        /// </summary>
+        public static string ServiceUrl => "https://www.2checkout.com/checkout/purchase";
+
+        /// <summary>
+        /// Gets the configuration route name
+        /// </summary>
+        public static string ConfigurationRouteName => "Plugin.Payments.TwoCheckout.Configure";
+
+        /// <summary>
+        /// Gets the IPN handler route name
         /// </summary>
         public static string IpnRouteName => "Plugin.Payments.TwoCheckout.IPNHandler";
     }
