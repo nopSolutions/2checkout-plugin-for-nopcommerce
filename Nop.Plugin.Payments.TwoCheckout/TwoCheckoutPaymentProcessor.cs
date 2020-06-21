@@ -310,8 +310,8 @@ namespace Nop.Plugin.Payments.TwoCheckout
                 ["Plugins.Payments.2Checkout.RedirectionTip"] = "You will be redirected to 2Checkout site to complete the order.",
                 ["Plugins.Payments.2Checkout.SecretWord"] = "Secret Word",
                 ["Plugins.Payments.2Checkout.SecretWord.Hint"] = "Enter secret word.",
-                ["Plugins.Payments.2Checkout.UseSandbox"] = "Use Sandbox",
-                ["Plugins.Payments.2Checkout.UseSandbox.Hint"] = "Check to enable Sandbox (testing environment)."
+                ["Plugins.Payments.2Checkout.UseSandbox"] = "Test mode",
+                ["Plugins.Payments.2Checkout.UseSandbox.Hint"] = "Check to enable test orders."
             });
 
             base.Install();
