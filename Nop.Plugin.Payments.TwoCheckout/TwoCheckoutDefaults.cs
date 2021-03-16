@@ -26,6 +26,11 @@
         public static string ConfigurationRouteName => "Plugin.Payments.TwoCheckout.Configure";
 
         /// <summary>
+        /// Gets the route name of completed endpoint
+        /// </summary>
+        public static string CompletedRouteName => "Plugin.Payments.TwoCheckout.Completed";
+
+        /// <summary>
         /// Gets the IPN handler route name
         /// </summary>
         public static string IpnRouteName => "Plugin.Payments.TwoCheckout.IPNHandler";

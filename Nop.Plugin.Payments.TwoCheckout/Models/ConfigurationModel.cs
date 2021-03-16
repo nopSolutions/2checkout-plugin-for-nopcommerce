@@ -7,7 +7,7 @@ namespace Nop.Plugin.Payments.TwoCheckout.Models
     /// <summary>
     /// Represents configuration model
     /// </summary>
-    public class ConfigurationModel : BaseNopModel
+    public record ConfigurationModel : BaseNopModel
     {
         #region Properties
 
@@ -16,7 +16,6 @@ namespace Nop.Plugin.Payments.TwoCheckout.Models
 
         [NopResourceDisplayName("Plugins.Payments.2Checkout.SecretWord")]
         [DataType(DataType.Password)]
-        [NoTrim]
         public string SecretWord { get; set; }
 
         [NopResourceDisplayName("Plugins.Payments.2Checkout.UseSandbox")]
@@ -27,6 +26,10 @@ namespace Nop.Plugin.Payments.TwoCheckout.Models
 
         [NopResourceDisplayName("Plugins.Payments.2Checkout.AdditionalFeePercentage")]
         public bool AdditionalFeePercentage { get; set; }
+
+        public string IpnUrl { get; set; }
+
+        public string RedirectUrl { get; set; }
 
         #endregion
     }

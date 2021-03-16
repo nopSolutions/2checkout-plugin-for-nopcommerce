@@ -5,9 +5,9 @@
 }
 
 <form asp-controller="PaymentTwoCheckout" asp-action="Configure" method="post">
-    <div class="panel-group">
-        <div class="panel panel-default">
-            <div class="panel-body">
+    <div class="cards-group">
+        <div class="card card-default">
+            <div class="card-body">
                 <p>
                     To configure the 2checkout plugin for nopCommerce.<br />
                     <br />
@@ -15,8 +15,8 @@
                     2. On the main menu select <b>Integrations</b> then <b>Webhooks & API</b>.<br />
                     3. Find your 'Merchant Code' in the section <b>API</b> then copy and paste it below in the 'Account Number' field.<br />
                     4. Find 'Instant Notification Service (INS) secret word' under <b>Secret word</b> section, you need to generate it if the field is empty. Paste your 'Secret Word' below.<br />
-                    5. In the section <b>Instant Notification System (INS)</b> you have to tick the 'Enable INS' and 'Enable global URL' checkboxes. Copy this URL: <em>@Url.RouteUrl(TwoCheckoutDefaults.IpnRouteName, null, webHelper.CurrentRequestProtocol)</em> and paste it into textbox.<br />
-                    6. In the section <b>Redirect URL</b> you have to tick the 'Enable return after sale' checkbox. Copy this URL: <em>@Url.RouteUrl(TwoCheckoutDefaults.IpnRouteName, null, webHelper.CurrentRequestProtocol)</em> and paste it into <b>Approved URL</b> then choose the option 'Header Redirect' in the 'Return Method' list.<br />
+                    5. In the section <b>Instant Notification System (INS)</b> you have to tick the 'Enable INS' and 'Enable global URL' checkboxes. Copy this URL: <em>@Model.IpnUrl</em> and paste it into textbox.<br />
+                    6. In the section <b>Redirect URL</b> you have to tick the 'Enable return after sale' checkbox. Copy this URL: <em>@Model.RedirectUrl</em> and paste it into <b>Approved URL</b> then choose the option 'Header redirect' in the <b>Return Method</b> list.<br />
                     7. Save the configuration.<br />
                 </p>
                 <p>
@@ -24,7 +24,7 @@
                     For this plugin to work properly ensure that your primary store currency is supported by 2Checkout.<br />
                     The test order system is available to all 2Checkout accounts and is enabled by default. However, if switched off for your account, you can enable it in <b>Setup</b> &rarr; <b>Ordering options</b> section.<br />
                 </p>
-                <div class="form-group">
+                <div class="form-group row">
                     <div class="col-md-3">
                         <nop-label asp-for="UseSandbox" />
                     </div>
@@ -33,7 +33,7 @@
                         <span asp-validation-for="UseSandbox"></span>
                     </div>
                 </div>
-                <div class="form-group">
+                <div class="form-group row">
                     <div class="col-md-3">
                         <nop-label asp-for="AccountNumber" />
                     </div>
@@ -42,7 +42,7 @@
                         <span asp-validation-for="AccountNumber"></span>
                     </div>
                 </div>
-                <div class="form-group">
+                <div class="form-group row">
                     <div class="col-md-3">
                         <nop-label asp-for="SecretWord" />
                     </div>
@@ -51,7 +51,7 @@
                         <span asp-validation-for="SecretWord"></span>
                     </div>
                 </div>
-                <div class="form-group">
+                <div class="form-group row">
                     <div class="col-md-3">
                         <nop-label asp-for="AdditionalFee" />
                     </div>
@@ -60,7 +60,7 @@
                         <span asp-validation-for="AdditionalFee"></span>
                     </div>
                 </div>
-                <div class="form-group">
+                <div class="form-group row">
                     <div class="col-md-3">
                         <nop-label asp-for="AdditionalFeePercentage" />
                     </div>
@@ -69,9 +69,9 @@
                         <span asp-validation-for="AdditionalFeePercentage"></span>
                     </div>
                 </div>
-                <div class="form-group">
-                    <div class="col-md-9 col-md-offset-3">
-                        <input type="submit" name="save" class="btn bg-blue" value="@T("Admin.Common.Save")" />
+                <div class="form-group row">
+                    <div class="col-md-9 offset-md-3">
+                        <input type="submit" name="save" class="btn btn-primary" value="@T("Admin.Common.Save")" />
                     </div>
                 </div>
             </div>

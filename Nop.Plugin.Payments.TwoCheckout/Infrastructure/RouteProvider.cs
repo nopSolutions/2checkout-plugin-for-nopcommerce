@@ -16,10 +16,16 @@ namespace Nop.Plugin.Payments.TwoCheckout.Infrastructure
         /// <param name="endpointRouteBuilder">Route builder</param>
         public void RegisterRoutes(IEndpointRouteBuilder endpointRouteBuilder)
         {
-            endpointRouteBuilder.MapControllerRoute(TwoCheckoutDefaults.ConfigurationRouteName, "Plugins/PaymentTwoCheckout/Configure",
+            endpointRouteBuilder.MapControllerRoute(TwoCheckoutDefaults.ConfigurationRouteName,
+                "Plugins/PaymentTwoCheckout/Configure",
                 new { controller = "PaymentTwoCheckout", action = "Configure", area = AreaNames.Admin });
 
-            endpointRouteBuilder.MapControllerRoute(TwoCheckoutDefaults.IpnRouteName, "Plugins/PaymentTwoCheckout/IPNHandler",
+            endpointRouteBuilder.MapControllerRoute(TwoCheckoutDefaults.CompletedRouteName,
+                "Plugins/PaymentTwoCheckout/Completed",
+                new { controller = "PaymentTwoCheckout", action = "Completed" });
+
+            endpointRouteBuilder.MapControllerRoute(TwoCheckoutDefaults.IpnRouteName,
+                "Plugins/PaymentTwoCheckout/IPNHandler",
                 new { controller = "PaymentTwoCheckoutIpn", action = "IPNHandler" });
         }
 

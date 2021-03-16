@@ -1,8 +1,11 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.Linq;
 using System.Net;
+using System.Security.Cryptography;
 using System.Text;
+using System.Threading.Tasks;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Infrastructure;
@@ -10,6 +13,7 @@ using Microsoft.AspNetCore.Mvc.Routing;
 using Nop.Core;
 using Nop.Core.Domain.Directory;
 using Nop.Core.Domain.Orders;
+using Nop.Core.Domain.Payments;
 using Nop.Core.Html;
 using Nop.Services.Catalog;
 using Nop.Services.Common;
@@ -35,6 +39,7 @@ namespace Nop.Plugin.Payments.TwoCheckout
         private readonly ICountryService _countryService;
         private readonly ICurrencyService _currencyService;
         private readonly ILocalizationService _localizationService;
+        private readonly IOrderProcessingService _orderProcessingService;
         private readonly IOrderService _orderService;
         private readonly IPaymentService _paymentService;
         private readonly IProductService _productService;
@@ -53,6 +58,7 @@ namespace Nop.Plugin.Payments.TwoCheckout
             ICountryService countryService,
             ICurrencyService currencyService,
             ILocalizationService localizationService,
+            IOrderProcessingService orderProcessingService,
             IOrderService orderService,
             IPaymentService paymentService,
             IProductService productService,
@@ -67,6 +73,7 @@ namespace Nop.Plugin.Payments.TwoCheckout
             _countryService = countryService;
             _currencyService = currencyService;
             _localizationService = localizationService;
+            _orderProcessingService = orderProcessingService;
             _orderService = orderService;
             _paymentService = paymentService;
             _productService = productService;
@@ -81,39 +88,140 @@ namespace Nop.Plugin.Payments.TwoCheckout
         #region Methods
 
         /// <summary>
+        /// Handle payment
+        /// </summary>
+        /// <param name="isIpn">Whether the request is IPN</param>
+        /// <returns>
+        /// A task that represents the asynchronous operation
+        /// The task result contains the process payment result
+        /// </returns>
+        public async Task<int?> HandleTransactionAsync(bool isIpn)
+        {
+            try
+            {
+                var request = _actionContextAccessor.ActionContext.HttpContext.Request;
+                var parameters = request.HasFormContentType && request.Form.Keys.Any()
+                    ? request.Form.ToDictionary(param => param.Key, param => param.Value)
+                    : request.Query.ToDictionary(param => param.Key, param => param.Value);
+
+                //define local function to get a value from the request Form or from the Query parameters
+                string getValue(string key) => parameters.TryGetValue(key, out var value) ? value.ToString() : string.Empty;
+
+                //try to get an order by the number or by the identifier (used in previous plugin versions)
+                var customOrderNumber = getValue(isIpn ? "item_id_1" : "x_invoice_num");
+                var order = await _orderService.GetOrderByCustomOrderNumberAsync(customOrderNumber)
+                    ?? await _orderService.GetOrderByIdAsync(int.TryParse(customOrderNumber, out var orderId) ? orderId : 0)
+                    ?? throw new NopException($"Order '{customOrderNumber}' not found");
+
+                //save request info as order note for debug purposes
+                var note = parameters.Aggregate(isIpn ? "2Checkout IPN" : "2Checkout redirect",
+                    (text, param) => $"{text}{Environment.NewLine}{param.Key}: {param.Value}");
+                await _orderService.InsertOrderNoteAsync(new OrderNote
+                {
+                    OrderId = order.Id,
+                    Note = note,
+                    DisplayToCustomer = false,
+                    CreatedOnUtc = DateTime.UtcNow
+                });
+
+                if (!isIpn)
+                    return order.Id;
+
+                //verify the passed data by comparing MD5 hashes
+                if (_twoCheckoutPaymentSettings.UseMd5Hashing)
+                {
+                    var stringToHash = $"{getValue("sale_id")}" +
+                        $"{_twoCheckoutPaymentSettings.AccountNumber}" +
+                        $"{getValue("invoice_id")}" +
+                        $"{_twoCheckoutPaymentSettings.SecretWord}";
+                    var data = new MD5CryptoServiceProvider().ComputeHash(Encoding.Default.GetBytes(stringToHash));
+                    var sBuilder = new StringBuilder();
+                    foreach (var t in data)
+                    {
+                        sBuilder.Append(t.ToString("x2"));
+                    }
+
+                    var computedHash = sBuilder.ToString();
+                    var receivedHash = getValue("md5_hash");
+
+                    if (computedHash.ToUpperInvariant() != receivedHash.ToUpperInvariant())
+                    {
+                        await _orderService.InsertOrderNoteAsync(new OrderNote
+                        {
+                            OrderId = order.Id,
+                            Note = $"Computed hash '{computedHash}' is not equal to received hash '{receivedHash}'",
+                            DisplayToCustomer = false,
+                            CreatedOnUtc = DateTime.UtcNow
+                        });
+
+                        throw new NopException("Hash validation failed");
+                    }
+                }
+
+                //check payment status
+                var newPaymentStatus = PaymentStatus.Pending;
+                var messageType = getValue("message_type");
+                var invoiceStatus = getValue("invoice_status");
+                var fraudStatus = getValue("fraud_status");
+                var paymentType = getValue("payment_type");
+
+                if (messageType.ToUpperInvariant() == "FRAUD_STATUS_CHANGED"
+                    && fraudStatus == "pass"
+                    && (invoiceStatus == "approved" || invoiceStatus == "deposited" || paymentType == "paypal ec"))
+                {
+                    newPaymentStatus = PaymentStatus.Paid;
+                }
+
+                //mark order as paid
+                if (newPaymentStatus == PaymentStatus.Paid && _orderProcessingService.CanMarkOrderAsPaid(order))
+                    await _orderProcessingService.MarkOrderAsPaidAsync(order);
+
+                return order.Id;
+            }
+            catch (Exception exception)
+            {
+                throw new NopException($"{TwoCheckoutDefaults.SystemName} error. {exception.Message}", exception);
+            }
+        }
+
+        /// <summary>
         /// Process a payment
         /// </summary>
         /// <param name="processPaymentRequest">Payment info required for an order processing</param>
-        /// <returns>Process payment result</returns>
-        public ProcessPaymentResult ProcessPayment(ProcessPaymentRequest processPaymentRequest)
+        /// <returns>
+        /// A task that represents the asynchronous operation
+        /// The task result contains the process payment result
+        /// </returns>
+        public Task<ProcessPaymentResult> ProcessPaymentAsync(ProcessPaymentRequest processPaymentRequest)
         {
-            return new ProcessPaymentResult();
+            return Task.FromResult(new ProcessPaymentResult());
         }
 
         /// <summary>
         /// Post process payment (used by payment gateways that require redirecting to a third-party URL)
         /// </summary>
         /// <param name="postProcessPaymentRequest">Payment info required for an order processing</param>
-        public void PostProcessPayment(PostProcessPaymentRequest postProcessPaymentRequest)
+        /// <returns>A task that represents the asynchronous operation</returns>
+        public async Task PostProcessPaymentAsync(PostProcessPaymentRequest postProcessPaymentRequest)
         {
             var builder = new StringBuilder();
 
             builder.AppendFormat("{0}?id_type=1", TwoCheckoutDefaults.ServiceUrl);
 
             //products
-            var orderProducts = _orderService.GetOrderItems(postProcessPaymentRequest.Order.Id);
+            var orderProducts = await _orderService.GetOrderItemsAsync(postProcessPaymentRequest.Order.Id);
             for (var i = 0; i < orderProducts.Count; i++)
             {
                 var pNum = i + 1;
                 var orderItem = orderProducts[i];
-                var product = _productService.GetProductById(orderProducts[i].ProductId);
+                var product = await _productService.GetProductByIdAsync(orderProducts[i].ProductId);
 
                 var cProd = $"c_prod_{pNum}";
                 var cProdValue = $"{product.Sku},{orderItem.Quantity}";
                 builder.AppendFormat("&{0}={1}", cProd, cProdValue);
 
                 var cName = $"c_name_{pNum}";
-                var cNameValue = _localizationService.GetLocalized(product, entity => entity.Name);
+                var cNameValue = product.Name;
                 builder.AppendFormat("&{0}={1}", WebUtility.UrlEncode(cName), WebUtility.UrlEncode(cNameValue));
 
                 var cDescription = $"c_description_{pNum}";
@@ -134,17 +242,18 @@ namespace Nop.Plugin.Payments.TwoCheckout
             builder.AppendFormat("&x_login={0}", _twoCheckoutPaymentSettings.AccountNumber);
             builder.AppendFormat("&sid={0}", _twoCheckoutPaymentSettings.AccountNumber);
             builder.AppendFormat("&x_amount={0}", postProcessPaymentRequest.Order.OrderTotal.ToString("0.00", CultureInfo.InvariantCulture));
-            builder.AppendFormat("&currency_code={0}", _currencyService.GetCurrencyById(_currencySettings.PrimaryStoreCurrencyId)?.CurrencyCode);
+            var currency = await _currencyService.GetCurrencyByIdAsync(_currencySettings.PrimaryStoreCurrencyId);
+            builder.AppendFormat("&currency_code={0}", currency?.CurrencyCode);
             builder.AppendFormat("&x_invoice_num={0}", postProcessPaymentRequest.Order.CustomOrderNumber);
 
             if (_twoCheckoutPaymentSettings.UseSandbox)
                 builder.AppendFormat("&demo=Y");
 
-            var billingAddress = _addressService.GetAddressById(postProcessPaymentRequest.Order.BillingAddressId);
+            var billingAddress = await _addressService.GetAddressByIdAsync(postProcessPaymentRequest.Order.BillingAddressId);
             if (billingAddress != null)
             {
-                var country = _countryService.GetCountryById(billingAddress.CountryId ?? 0);
-                var state = _stateProvinceService.GetStateProvinceById(billingAddress.StateProvinceId ?? 0);
+                var country = await _countryService.GetCountryByIdAsync(billingAddress.CountryId ?? 0);
+                var state = await _stateProvinceService.GetStateProvinceByIdAsync(billingAddress.StateProvinceId ?? 0);
                 builder.AppendFormat("&x_First_Name={0}", WebUtility.UrlEncode(billingAddress.FirstName ?? string.Empty));
                 builder.AppendFormat("&x_Last_Name={0}", WebUtility.UrlEncode(billingAddress.LastName ?? string.Empty));
                 builder.AppendFormat("&x_Address={0}", WebUtility.UrlEncode(billingAddress.Address1 ?? string.Empty));
@@ -163,24 +272,30 @@ namespace Nop.Plugin.Payments.TwoCheckout
         /// <summary>
         /// Returns a value indicating whether payment method should be hidden during checkout
         /// </summary>
-        /// <param name="cart">Shoping cart</param>
-        /// <returns>true - hide; false - display.</returns>
-        public bool HidePaymentMethod(IList<ShoppingCartItem> cart)
+        /// <param name="cart">Shopping cart</param>
+        /// <returns>
+        /// A task that represents the asynchronous operation
+        /// The task result contains the rue - hide; false - display.
+        /// </returns>
+        public Task<bool> HidePaymentMethodAsync(IList<ShoppingCartItem> cart)
         {
             //you can put any logic here
             //for example, hide this payment method if all products in the cart are downloadable
             //or hide this payment method if current customer is from certain country
-            return false;
+            return Task.FromResult(false);
         }
 
         /// <summary>
         /// Gets additional handling fee
         /// </summary>
-        /// <param name="cart">Shoping cart</param>
-        /// <returns>Additional handling fee</returns>
-        public decimal GetAdditionalHandlingFee(IList<ShoppingCartItem> cart)
+        /// <param name="cart">Shopping cart</param>
+        /// <returns>
+        /// A task that represents the asynchronous operation
+        /// The task result contains the additional handling fee
+        /// </returns>
+        public async Task<decimal> GetAdditionalHandlingFeeAsync(IList<ShoppingCartItem> cart)
         {
-            return _paymentService.CalculateAdditionalFee(cart,
+            return await _paymentService.CalculateAdditionalFeeAsync(cart,
                 _twoCheckoutPaymentSettings.AdditionalFee, _twoCheckoutPaymentSettings.AdditionalFeePercentage);
         }
 
@@ -188,84 +303,108 @@ namespace Nop.Plugin.Payments.TwoCheckout
         /// Captures payment
         /// </summary>
         /// <param name="capturePaymentRequest">Capture payment request</param>
-        /// <returns>Capture payment result</returns>
-        public CapturePaymentResult Capture(CapturePaymentRequest capturePaymentRequest)
+        /// <returns>
+        /// A task that represents the asynchronous operation
+        /// The task result contains the capture payment result
+        /// </returns>
+        public Task<CapturePaymentResult> CaptureAsync(CapturePaymentRequest capturePaymentRequest)
         {
-            return new CapturePaymentResult { Errors = new[] { "Capture method not supported" } };
+            return Task.FromResult(new CapturePaymentResult { Errors = new[] { "Capture method not supported" } });
         }
 
         /// <summary>
         /// Refunds a payment
         /// </summary>
         /// <param name="refundPaymentRequest">Request</param>
-        /// <returns>Result</returns>
-        public RefundPaymentResult Refund(RefundPaymentRequest refundPaymentRequest)
+        /// <returns>
+        /// A task that represents the asynchronous operation
+        /// The task result contains the result
+        /// </returns>
+        public Task<RefundPaymentResult> RefundAsync(RefundPaymentRequest refundPaymentRequest)
         {
-            return new RefundPaymentResult { Errors = new[] { "Refund method not supported" } };
+            return Task.FromResult(new RefundPaymentResult { Errors = new[] { "Refund method not supported" } });
         }
 
         /// <summary>
         /// Voids a payment
         /// </summary>
         /// <param name="voidPaymentRequest">Request</param>
-        /// <returns>Result</returns>
-        public VoidPaymentResult Void(VoidPaymentRequest voidPaymentRequest)
+        /// <returns>
+        /// A task that represents the asynchronous operation
+        /// The task result contains the result
+        /// </returns>
+        public Task<VoidPaymentResult> VoidAsync(VoidPaymentRequest voidPaymentRequest)
         {
-            return new VoidPaymentResult { Errors = new[] { "Void method not supported" } };
+            return Task.FromResult(new VoidPaymentResult { Errors = new[] { "Void method not supported" } });
         }
 
         /// <summary>
         /// Process recurring payment
         /// </summary>
         /// <param name="processPaymentRequest">Payment info required for an order processing</param>
-        /// <returns>Process payment result</returns>
-        public ProcessPaymentResult ProcessRecurringPayment(ProcessPaymentRequest processPaymentRequest)
+        /// <returns>
+        /// A task that represents the asynchronous operation
+        /// The task result contains the process payment result
+        /// </returns>
+        public Task<ProcessPaymentResult> ProcessRecurringPaymentAsync(ProcessPaymentRequest processPaymentRequest)
         {
-            return new ProcessPaymentResult { Errors = new[] { "Recurring payment not supported" } };
+            return Task.FromResult(new ProcessPaymentResult { Errors = new[] { "Recurring payment not supported" } });
         }
 
         /// <summary>
         /// Cancels a recurring payment
         /// </summary>
         /// <param name="cancelPaymentRequest">Request</param>
-        /// <returns>Result</returns>
-        public CancelRecurringPaymentResult CancelRecurringPayment(CancelRecurringPaymentRequest cancelPaymentRequest)
+        /// <returns>
+        /// A task that represents the asynchronous operation
+        /// The task result contains the result
+        /// </returns>
+        public Task<CancelRecurringPaymentResult> CancelRecurringPaymentAsync(CancelRecurringPaymentRequest cancelPaymentRequest)
         {
-            return new CancelRecurringPaymentResult { Errors = new[] { "Recurring payment not supported" } };
+            return Task.FromResult(new CancelRecurringPaymentResult { Errors = new[] { "Recurring payment not supported" } });
         }
 
         /// <summary>
         /// Gets a value indicating whether customers can complete a payment after order is placed but not completed (for redirection payment methods)
         /// </summary>
         /// <param name="order">Order</param>
-        /// <returns>Result</returns>
-        public bool CanRePostProcessPayment(Order order)
+        /// <returns>
+        /// A task that represents the asynchronous operation
+        /// The task result contains the result
+        /// </returns>
+        public Task<bool> CanRePostProcessPaymentAsync(Order order)
         {
             if (order == null)
                 throw new ArgumentNullException(nameof(order));
 
             //do not allow reposting (it can take up to several hours until your order is reviewed
-            return false;
+            return Task.FromResult(false);
         }
 
         /// <summary>
         /// Validate payment form
         /// </summary>
         /// <param name="form">The parsed form values</param>
-        /// <returns>List of validating errors</returns>
-        public IList<string> ValidatePaymentForm(IFormCollection form)
+        /// <returns>
+        /// A task that represents the asynchronous operation
+        /// The task result contains the list of validating errors
+        /// </returns>
+        public Task<IList<string>> ValidatePaymentFormAsync(IFormCollection form)
         {
-            return new List<string>();
+            return Task.FromResult<IList<string>>(new List<string>());
         }
 
         /// <summary>
         /// Get payment information
         /// </summary>
         /// <param name="form">The parsed form values</param>
-        /// <returns>Payment info holder</returns>
-        public ProcessPaymentRequest GetPaymentInfo(IFormCollection form)
+        /// <returns>
+        /// A task that represents the asynchronous operation
+        /// The task result contains the payment info holder
+        /// </returns>
+        public Task<ProcessPaymentRequest> GetPaymentInfoAsync(IFormCollection form)
         {
-            return new ProcessPaymentRequest();
+            return Task.FromResult(new ProcessPaymentRequest());
         }
 
         /// <summary>
@@ -286,22 +425,23 @@ namespace Nop.Plugin.Payments.TwoCheckout
         }
 
         /// <summary>
-        /// Install plugin
+        /// Install the plugin
         /// </summary>
-        public override void Install()
+        /// <returns>A task that represents the asynchronous operation</returns>
+        public override async Task InstallAsync()
         {
-            //settings
-            _settingService.SaveSetting(new TwoCheckoutPaymentSettings()
+            await _settingService.SaveSettingAsync(new TwoCheckoutPaymentSettings()
             {
                 UseSandbox = true,
-                UseMd5Hashing = true
+                UseMd5Hashing = true,
+                LogIpnErrors = true
             });
 
-            //locales
-            _localizationService.AddPluginLocaleResource(new Dictionary<string, string>
+            await _localizationService.AddLocaleResourceAsync(new Dictionary<string, string>
             {
                 ["Plugins.Payments.2Checkout.AccountNumber"] = "Account number",
                 ["Plugins.Payments.2Checkout.AccountNumber.Hint"] = "Enter account number.",
+                ["Plugins.Payments.2Checkout.AccountNumber.Required"] = "Account number is required",
                 ["Plugins.Payments.2Checkout.AdditionalFee"] = "Additional fee",
                 ["Plugins.Payments.2Checkout.AdditionalFee.Hint"] = "Enter additional fee to charge your customers.",
                 ["Plugins.Payments.2Checkout.AdditionalFeePercentage"] = "Additional fee. Use percentage",
@@ -310,25 +450,32 @@ namespace Nop.Plugin.Payments.TwoCheckout
                 ["Plugins.Payments.2Checkout.RedirectionTip"] = "You will be redirected to 2Checkout site to complete the order.",
                 ["Plugins.Payments.2Checkout.SecretWord"] = "Secret Word",
                 ["Plugins.Payments.2Checkout.SecretWord.Hint"] = "Enter secret word.",
+                ["Plugins.Payments.2Checkout.SecretWord.Required"] = "Secret word is required",
                 ["Plugins.Payments.2Checkout.UseSandbox"] = "Test mode",
                 ["Plugins.Payments.2Checkout.UseSandbox.Hint"] = "Check to enable test orders."
             });
 
-            base.Install();
+            await base.InstallAsync();
         }
 
         /// <summary>
-        /// Uninstall plugin
+        /// Uninstall the plugin
         /// </summary>
-        public override void Uninstall()
+        /// <returns>A task that represents the asynchronous operation</returns>
+        public override async Task UninstallAsync()
         {
-            //settings
-            _settingService.DeleteSetting<TwoCheckoutPaymentSettings>();
+            await _settingService.DeleteSettingAsync<TwoCheckoutPaymentSettings>();
+            await _localizationService.DeleteLocaleResourcesAsync("Plugins.Payments.2Checkout");
+            await base.UninstallAsync();
+        }
 
-            //locales
-            _localizationService.DeletePluginLocaleResources("Plugins.Payments.2Checkout");
-
-            base.Uninstall();
+        /// <summary>
+        /// Gets a payment method description that will be displayed on checkout pages in the public store
+        /// </summary>
+        /// <returns>A task that represents the asynchronous operation</returns>
+        public async Task<string> GetPaymentMethodDescriptionAsync()
+        {
+            return await _localizationService.GetResourceAsync("Plugins.Payments.2Checkout.PaymentMethodDescription");
         }
 
         #endregion
@@ -369,11 +516,6 @@ namespace Nop.Plugin.Payments.TwoCheckout
         /// Gets a value indicating whether we should display a payment information page for this plugin
         /// </summary>
         public bool SkipPaymentInfo => false;
-
-        /// <summary>
-        /// Gets a payment method description that will be displayed on checkout pages in the public store
-        /// </summary>
-        public string PaymentMethodDescription => _localizationService.GetResource("Plugins.Payments.2Checkout.PaymentMethodDescription");
 
         #endregion
     }
