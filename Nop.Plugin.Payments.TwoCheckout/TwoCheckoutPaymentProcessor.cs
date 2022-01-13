@@ -14,11 +14,11 @@ using Nop.Core;
 using Nop.Core.Domain.Directory;
 using Nop.Core.Domain.Orders;
 using Nop.Core.Domain.Payments;
-using Nop.Core.Html;
 using Nop.Services.Catalog;
 using Nop.Services.Common;
 using Nop.Services.Configuration;
 using Nop.Services.Directory;
+using Nop.Services.Html;
 using Nop.Services.Localization;
 using Nop.Services.Orders;
 using Nop.Services.Payments;
@@ -39,9 +39,10 @@ namespace Nop.Plugin.Payments.TwoCheckout
         private readonly ICountryService _countryService;
         private readonly ICurrencyService _currencyService;
         private readonly ILocalizationService _localizationService;
+        private readonly IHtmlFormatter _htmlFormatter;
         private readonly IOrderProcessingService _orderProcessingService;
         private readonly IOrderService _orderService;
-        private readonly IPaymentService _paymentService;
+        private readonly IOrderTotalCalculationService _orderTotalCalculationService;
         private readonly IProductService _productService;
         private readonly ISettingService _settingService;
         private readonly IStateProvinceService _stateProvinceService;
@@ -58,9 +59,10 @@ namespace Nop.Plugin.Payments.TwoCheckout
             ICountryService countryService,
             ICurrencyService currencyService,
             ILocalizationService localizationService,
+            IHtmlFormatter htmlFormatter,
             IOrderProcessingService orderProcessingService,
             IOrderService orderService,
-            IPaymentService paymentService,
+            IOrderTotalCalculationService orderTotalCalculationService,
             IProductService productService,
             ISettingService settingService,
             IStateProvinceService stateProvinceService,
@@ -73,9 +75,10 @@ namespace Nop.Plugin.Payments.TwoCheckout
             _countryService = countryService;
             _currencyService = currencyService;
             _localizationService = localizationService;
+            _htmlFormatter = htmlFormatter;
             _orderProcessingService = orderProcessingService;
             _orderService = orderService;
-            _paymentService = paymentService;
+            _orderTotalCalculationService = orderTotalCalculationService;
             _productService = productService;
             _settingService = settingService;
             _stateProvinceService = stateProvinceService;
@@ -134,7 +137,7 @@ namespace Nop.Plugin.Payments.TwoCheckout
                         $"{_twoCheckoutPaymentSettings.AccountNumber}" +
                         $"{getValue("invoice_id")}" +
                         $"{_twoCheckoutPaymentSettings.SecretWord}";
-                    var data = new MD5CryptoServiceProvider().ComputeHash(Encoding.Default.GetBytes(stringToHash));
+                    var data = MD5.Create().ComputeHash(Encoding.Default.GetBytes(stringToHash));
                     var sBuilder = new StringBuilder();
                     foreach (var t in data)
                     {
@@ -227,7 +230,7 @@ namespace Nop.Plugin.Payments.TwoCheckout
                 var cDescription = $"c_description_{pNum}";
                 var cDescriptionValue = cNameValue;
                 if (!string.IsNullOrEmpty(orderItem.AttributeDescription))
-                    cDescriptionValue = HtmlHelper.StripTags($"{cDescriptionValue}. {orderItem.AttributeDescription}");
+                    cDescriptionValue = _htmlFormatter.StripTags($"{cDescriptionValue}. {orderItem.AttributeDescription}");
                 builder.AppendFormat("&{0}={1}", WebUtility.UrlEncode(cDescription), WebUtility.UrlEncode(cDescriptionValue));
 
                 var cPrice = $"c_price_{pNum}";
@@ -295,7 +298,7 @@ namespace Nop.Plugin.Payments.TwoCheckout
         /// </returns>
         public async Task<decimal> GetAdditionalHandlingFeeAsync(IList<ShoppingCartItem> cart)
         {
-            return await _paymentService.CalculateAdditionalFeeAsync(cart,
+            return await _orderTotalCalculationService.CalculatePaymentAdditionalFeeAsync(cart,
                 _twoCheckoutPaymentSettings.AdditionalFee, _twoCheckoutPaymentSettings.AdditionalFeePercentage);
         }
 
@@ -437,7 +440,7 @@ namespace Nop.Plugin.Payments.TwoCheckout
                 LogIpnErrors = true
             });
 
-            await _localizationService.AddLocaleResourceAsync(new Dictionary<string, string>
+            await _localizationService.AddOrUpdateLocaleResourceAsync(new Dictionary<string, string>
             {
                 ["Plugins.Payments.2Checkout.AccountNumber"] = "Account number",
                 ["Plugins.Payments.2Checkout.AccountNumber.Hint"] = "Enter account number.",
