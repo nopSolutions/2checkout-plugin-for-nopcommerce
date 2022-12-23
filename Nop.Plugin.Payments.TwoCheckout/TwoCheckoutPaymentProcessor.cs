@@ -14,6 +14,7 @@ using Nop.Core;
 using Nop.Core.Domain.Directory;
 using Nop.Core.Domain.Orders;
 using Nop.Core.Domain.Payments;
+using Nop.Plugin.Payments.TwoCheckout.Components;
 using Nop.Services.Catalog;
 using Nop.Services.Common;
 using Nop.Services.Configuration;
@@ -419,12 +420,12 @@ namespace Nop.Plugin.Payments.TwoCheckout
         }
 
         /// <summary>
-        /// Gets a name of a view component for displaying plugin in public store ("payment info" checkout step)
+        /// Gets a type of a view component for displaying plugin in public store ("payment info" checkout step)
         /// </summary>
-        /// <returns>View component name</returns>
-        public string GetPublicViewComponentName()
+        /// <returns>View component type</returns>
+        public Type GetPublicViewComponent()
         {
-            return TwoCheckoutDefaults.PAYMENT_INFO_VIEW_COMPONENT_NAME;
+            return typeof(PaymentTwoCheckoutViewComponent);
         }
 
         /// <summary>
