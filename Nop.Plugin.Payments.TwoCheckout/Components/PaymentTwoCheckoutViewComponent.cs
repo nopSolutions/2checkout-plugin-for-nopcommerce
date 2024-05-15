@@ -6,7 +6,6 @@ namespace Nop.Plugin.Payments.TwoCheckout.Components
     /// <summary>
     /// Represents payment info view component
     /// </summary>
-    [ViewComponent(Name = TwoCheckoutDefaults.PAYMENT_INFO_VIEW_COMPONENT_NAME)]
     public class PaymentTwoCheckoutViewComponent : NopViewComponent
     {
         /// <summary>

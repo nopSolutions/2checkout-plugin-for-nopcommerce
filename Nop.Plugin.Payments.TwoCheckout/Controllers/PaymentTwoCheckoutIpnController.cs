@@ -45,7 +45,7 @@ namespace Nop.Plugin.Payments.TwoCheckout.Controllers
                 if (!_paymentPluginManager.IsPluginActive(paymentMethod) || paymentMethod is not TwoCheckoutPaymentProcessor plugin)
                     throw new NopException($"{TwoCheckoutDefaults.SystemName} error. Module cannot be loaded");
 
-                await plugin.HandleTransactionAsync(true);
+                await plugin.HandleIpnRequestAsync();
             }
             catch (Exception exception)
             {

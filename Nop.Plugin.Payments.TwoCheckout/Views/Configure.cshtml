@@ -15,8 +15,8 @@
                     2. On the main menu select <b>Integrations</b> then <b>Webhooks & API</b>.<br />
                     3. Find your 'Merchant Code' in the section <b>API</b> then copy and paste it below in the 'Account Number' field.<br />
                     4. Find 'Instant Notification Service (INS) secret word' under <b>Secret word</b> section, you need to generate it if the field is empty. Paste your 'Secret Word' below.<br />
-                    5. In the section <b>Instant Notification System (INS)</b> you have to tick the 'Enable INS' and 'Enable global URL' checkboxes. Copy this URL: <em>@Model.IpnUrl</em> and paste it into textbox.<br />
-                    6. In the section <b>Redirect URL</b> you have to tick the 'Enable return after sale' checkbox. Copy this URL: <em>@Model.RedirectUrl</em> and paste it into <b>Approved URL</b> then choose the option 'Header redirect' in the <b>Return Method</b> list.<br />
+                    5. In the section <b>Instant Notification System (INS)</b> you have to tick the 'Enable INS' and 'Enable global URL' checkboxes. Copy this URL: <em>@Model.IpnUrl</em> and paste it into textbox. Press Update.<br />
+                    6. In the section <b>Redirect URL</b> you have to tick the 'Enable return after sale' checkbox. Copy this URL: <em>@Model.RedirectUrl</em> and paste it into <b>Approved URL</b> then choose the option 'Header redirect' in the <b>Return Method</b> list. Press Update.<<br />
                     7. Save the configuration.<br />
                 </p>
                 <p>
@@ -47,7 +47,7 @@
                         <nop-label asp-for="SecretWord" />
                     </div>
                     <div class="col-md-9">
-                        <nop-editor asp-for="SecretWord" asp-value="@Model.SecretWord" asp-required="true" />
+                        <nop-editor asp-for="SecretWord" asp-required="true" html-attributes="@(new { value = Model.SecretWord })" />
                         <span asp-validation-for="SecretWord"></span>
                     </div>
                 </div>

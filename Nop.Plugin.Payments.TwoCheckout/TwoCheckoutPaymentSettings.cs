@@ -41,5 +41,10 @@ namespace Nop.Plugin.Payments.TwoCheckout
         /// Gets or sets a value indicating whether to log IPN errors
         /// </summary>
         public bool LogIpnErrors { get; set; }
+
+        /// <summary>
+        /// Gets or sets a value indicating whether to use new ConvertPlus API. If false - old 2CO API will be used
+        /// </summary>
+        public bool UseConvertPlus { get; set; }
     }
 }

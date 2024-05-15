@@ -2,13 +2,14 @@
 using Microsoft.AspNetCore.Routing;
 using Nop.Web.Framework;
 using Nop.Web.Framework.Mvc.Routing;
+using Nop.Web.Infrastructure;
 
 namespace Nop.Plugin.Payments.TwoCheckout.Infrastructure
 {
     /// <summary>
     /// Represents plugin route provider
     /// </summary>
-    public class RouteProvider : IRouteProvider
+    public class RouteProvider : BaseRouteProvider, IRouteProvider
     {
         /// <summary>
         /// Register routes
@@ -16,17 +17,22 @@ namespace Nop.Plugin.Payments.TwoCheckout.Infrastructure
         /// <param name="endpointRouteBuilder">Route builder</param>
         public void RegisterRoutes(IEndpointRouteBuilder endpointRouteBuilder)
         {
-            endpointRouteBuilder.MapControllerRoute(TwoCheckoutDefaults.ConfigurationRouteName,
-                "Plugins/PaymentTwoCheckout/Configure",
-                new { controller = "PaymentTwoCheckout", action = "Configure", area = AreaNames.Admin });
+            //get language pattern
+            //it's not needed to use language pattern in AJAX requests and for actions returning the result directly (e.g. file to download),
+            //use it only for URLs of pages that the user can go to
+            var lang = GetLanguageRoutePattern();
 
-            endpointRouteBuilder.MapControllerRoute(TwoCheckoutDefaults.CompletedRouteName,
-                "Plugins/PaymentTwoCheckout/Completed",
-                new { controller = "PaymentTwoCheckout", action = "Completed" });
+            endpointRouteBuilder.MapControllerRoute(name: TwoCheckoutDefaults.ConfigurationRouteName,
+                pattern: "Plugins/PaymentTwoCheckout/Configure",
+                defaults: new { controller = "PaymentTwoCheckout", action = "Configure", area = AreaNames.Admin });
 
-            endpointRouteBuilder.MapControllerRoute(TwoCheckoutDefaults.IpnRouteName,
-                "Plugins/PaymentTwoCheckout/IPNHandler",
-                new { controller = "PaymentTwoCheckoutIpn", action = "IPNHandler" });
+            endpointRouteBuilder.MapControllerRoute(name: TwoCheckoutDefaults.CompletedRouteName,
+                pattern: $"{lang}/Plugins/PaymentTwoCheckout/Completed",
+                defaults: new { controller = "PaymentTwoCheckoutPublic", action = "Completed" });
+
+            endpointRouteBuilder.MapControllerRoute(name: TwoCheckoutDefaults.IpnRouteName,
+                pattern: "Plugins/PaymentTwoCheckout/IPNHandler",
+                defaults: new { controller = "PaymentTwoCheckoutIpn", action = "IPNHandler" });
         }
 
         /// <summary>
