@@ -22,9 +22,9 @@ using Nop.Services.Orders;
 namespace Nop.Plugin.Payments.TwoCheckout.Services
 {
     /// <summary>
-    /// Represents payment manager implementation
+    /// Represents payment manager
     /// </summary>
-    public class ConvertPlusManager : IPaymentManager
+    public class PaymentManager
     {
         #region Fields
 
@@ -43,7 +43,7 @@ namespace Nop.Plugin.Payments.TwoCheckout.Services
 
         #region Ctor
 
-        public ConvertPlusManager(CurrencySettings currencySettings,
+        public PaymentManager(CurrencySettings currencySettings,
             IActionContextAccessor actionContextAccessor,
             IAddressService addressService,
             ICountryService countryService,
@@ -217,7 +217,7 @@ namespace Nop.Plugin.Payments.TwoCheckout.Services
         /// </returns>
         public async Task<string> GetRequestUrlAsync(Order order)
         {
-            var builder = new StringBuilder($"{TwoCheckoutDefaults.ServiceUrl.ConvertPlus}?dynamic=1");
+            var builder = new StringBuilder($"{TwoCheckoutDefaults.ServiceUrl}?dynamic=1");
 
             var currency = await _currencyService.GetCurrencyByIdAsync(_currencySettings.PrimaryStoreCurrencyId);
 

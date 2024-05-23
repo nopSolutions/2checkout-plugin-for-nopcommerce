@@ -33,9 +33,9 @@ namespace Nop.Plugin.Payments.TwoCheckout
         private readonly IOrderProcessingService _orderProcessingService;
         private readonly IOrderService _orderService;
         private readonly IOrderTotalCalculationService _orderTotalCalculationService;
-        private readonly IPaymentManager _paymentManager;
         private readonly ISettingService _settingService;
         private readonly IUrlHelperFactory _urlHelperFactory;
+        private readonly PaymentManager _paymentManager;
         private readonly TwoCheckoutPaymentSettings _twoCheckoutPaymentSettings;
 
         #endregion
@@ -47,9 +47,9 @@ namespace Nop.Plugin.Payments.TwoCheckout
             IOrderProcessingService orderProcessingService,
             IOrderService orderService,
             IOrderTotalCalculationService orderTotalCalculationService,
-            IPaymentManager paymentManager,
             ISettingService settingService,
             IUrlHelperFactory urlHelperFactory,
+            PaymentManager paymentManager,
             TwoCheckoutPaymentSettings twoCheckoutPaymentSettings)
         {
             _actionContextAccessor = actionContextAccessor;
@@ -57,9 +57,9 @@ namespace Nop.Plugin.Payments.TwoCheckout
             _orderProcessingService = orderProcessingService;
             _orderService = orderService;
             _orderTotalCalculationService = orderTotalCalculationService;
-            _paymentManager = paymentManager;
             _settingService = settingService;
             _urlHelperFactory = urlHelperFactory;
+            _paymentManager = paymentManager;
             _twoCheckoutPaymentSettings = twoCheckoutPaymentSettings;
         }
 
@@ -83,15 +83,13 @@ namespace Nop.Plugin.Payments.TwoCheckout
             string getValue(string key) => parameters.TryGetValue(key.ToLower(), out var value) ? value.ToString() : string.Empty;
 
             //try to get an order by the number or by the identifier (used in previous plugin versions)
-            var customOrderNumber = getValue(_twoCheckoutPaymentSettings.UseConvertPlus ? "vendor_order_id" : "item_id_1");
-            if (string.IsNullOrEmpty(customOrderNumber))
-                customOrderNumber = getValue("x_invoice_num");
+            var customOrderNumber = getValue("vendor_order_id");
             var order = await _orderService.GetOrderByCustomOrderNumberAsync(customOrderNumber)
                 ?? await _orderService.GetOrderByIdAsync(int.TryParse(customOrderNumber, out var orderId) ? orderId : 0)
                 ?? throw new NopException($"Order '{customOrderNumber}' not found");
 
             //save request info as order note for debug purposes
-            var note = parameters.Aggregate(_twoCheckoutPaymentSettings.UseConvertPlus ? "ConvertPlus INS:" : "2Checkout IPN:",
+            var note = parameters.Aggregate("ConvertPlus INS:",
                 (text, param) => $"{text}{Environment.NewLine}{param.Key}: {param.Value}");
             await _orderService.InsertOrderNoteAsync(new OrderNote
             {
@@ -105,17 +103,10 @@ namespace Nop.Plugin.Payments.TwoCheckout
             if (_twoCheckoutPaymentSettings.UseMd5Hashing)
             {
                 var stringToHash =
-                    _twoCheckoutPaymentSettings.UseConvertPlus
-                    ?
                     $"{getValue("sale_id")}" +
                     $"{_twoCheckoutPaymentSettings.AccountNumber}" +
                     $"{getValue("invoice_id")}" +
-                    $"{_twoCheckoutPaymentSettings.SecretWord}"
-                    :
-                    $"{_twoCheckoutPaymentSettings.SecretWord}" +
-                    $"{_twoCheckoutPaymentSettings.AccountNumber}" +
-                    $"{(_twoCheckoutPaymentSettings.UseSandbox ? "1" : getValue("order_number"))}" +
-                    $"{getValue("x_amount")}";
+                    $"{_twoCheckoutPaymentSettings.SecretWord}";
 
                 var data = MD5.HashData(Encoding.Default.GetBytes(stringToHash));
                 var sBuilder = new StringBuilder();
@@ -125,7 +116,7 @@ namespace Nop.Plugin.Payments.TwoCheckout
                 }
 
                 var computedHash = sBuilder.ToString();
-                var receivedHash = getValue(_twoCheckoutPaymentSettings.UseConvertPlus ? "md5_hash" : "x_md5_hash");
+                var receivedHash = getValue("md5_hash");
 
                 if (!string.Equals(computedHash, receivedHash, StringComparison.InvariantCultureIgnoreCase))
                 {
@@ -350,8 +341,7 @@ namespace Nop.Plugin.Payments.TwoCheckout
             {
                 UseSandbox = true,
                 UseMd5Hashing = true,
-                LogIpnErrors = true,
-                UseConvertPlus = true
+                LogIpnErrors = true
             });
 
             await _localizationService.AddOrUpdateLocaleResourceAsync(new Dictionary<string, string>
