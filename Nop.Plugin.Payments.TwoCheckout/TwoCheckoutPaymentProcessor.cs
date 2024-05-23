@@ -1,12 +1,8 @@
-﻿using System.Security.Cryptography;
-using System.Text;
-using Microsoft.AspNetCore.Http;
+﻿using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Infrastructure;
 using Microsoft.AspNetCore.Mvc.Routing;
-using Nop.Core;
 using Nop.Core.Domain.Orders;
-using Nop.Core.Domain.Payments;
 using Nop.Plugin.Payments.TwoCheckout.Components;
 using Nop.Plugin.Payments.TwoCheckout.Services;
 using Nop.Services.Configuration;
@@ -26,12 +22,10 @@ public class TwoCheckoutPaymentProcessor : BasePlugin, IPaymentMethod
 
     private readonly IActionContextAccessor _actionContextAccessor;
     private readonly ILocalizationService _localizationService;
-    private readonly IOrderProcessingService _orderProcessingService;
-    private readonly IOrderService _orderService;
     private readonly IOrderTotalCalculationService _orderTotalCalculationService;
-    private readonly IPaymentManager _paymentManager;
     private readonly ISettingService _settingService;
     private readonly IUrlHelperFactory _urlHelperFactory;
+    private readonly PaymentManager _paymentManager;
     private readonly TwoCheckoutPaymentSettings _twoCheckoutPaymentSettings;
 
     #endregion
@@ -40,121 +34,24 @@ public class TwoCheckoutPaymentProcessor : BasePlugin, IPaymentMethod
 
     public TwoCheckoutPaymentProcessor(IActionContextAccessor actionContextAccessor,
         ILocalizationService localizationService,
-        IOrderProcessingService orderProcessingService,
-        IOrderService orderService,
         IOrderTotalCalculationService orderTotalCalculationService,
-        IPaymentManager paymentManager,
         ISettingService settingService,
         IUrlHelperFactory urlHelperFactory,
+        PaymentManager paymentManager,
         TwoCheckoutPaymentSettings twoCheckoutPaymentSettings)
     {
         _actionContextAccessor = actionContextAccessor;
         _localizationService = localizationService;
-        _orderProcessingService = orderProcessingService;
-        _orderService = orderService;
         _orderTotalCalculationService = orderTotalCalculationService;
-        _paymentManager = paymentManager;
         _settingService = settingService;
         _urlHelperFactory = urlHelperFactory;
+        _paymentManager = paymentManager;
         _twoCheckoutPaymentSettings = twoCheckoutPaymentSettings;
     }
 
     #endregion
 
     #region Methods
-
-    /// <summary>
-    /// Handle IPN/INS request
-    /// </summary>
-    /// <returns>A task that represents the asynchronous operation</returns>
-    public async Task HandleIpnRequestAsync()
-    {
-        var request = _actionContextAccessor.ActionContext.HttpContext.Request;
-        var form = request.HasFormContentType ? await request.ReadFormAsync() : new FormCollection(null);
-        var parameters = request.HasFormContentType && form.Keys.Any()
-            ? form.ToDictionary(param => param.Key.ToLower(), param => param.Value)
-            : request.Query.ToDictionary(param => param.Key.ToLower(), param => param.Value);
-
-        //define local function to get a value from the request Form or from the Query parameters
-        string getValue(string key) => parameters.TryGetValue(key.ToLower(), out var value) ? value.ToString() : string.Empty;
-
-        //try to get an order by the number or by the identifier (used in previous plugin versions)
-        var customOrderNumber = getValue(_twoCheckoutPaymentSettings.UseConvertPlus ? "vendor_order_id" : "item_id_1");
-        if (string.IsNullOrEmpty(customOrderNumber))
-            customOrderNumber = getValue("x_invoice_num");
-        var order = await _orderService.GetOrderByCustomOrderNumberAsync(customOrderNumber)
-            ?? await _orderService.GetOrderByIdAsync(int.TryParse(customOrderNumber, out var orderId) ? orderId : 0)
-            ?? throw new NopException($"Order '{customOrderNumber}' not found");
-
-        //save request info as order note for debug purposes
-        var note = parameters.Aggregate(_twoCheckoutPaymentSettings.UseConvertPlus ? "ConvertPlus INS:" : "2Checkout IPN:",
-            (text, param) => $"{text}{Environment.NewLine}{param.Key}: {param.Value}");
-        await _orderService.InsertOrderNoteAsync(new OrderNote
-        {
-            OrderId = order.Id,
-            Note = note,
-            DisplayToCustomer = false,
-            CreatedOnUtc = DateTime.UtcNow
-        });
-
-        //verify the passed data by comparing MD5 hashes
-        if (_twoCheckoutPaymentSettings.UseMd5Hashing)
-        {
-            var stringToHash =
-                _twoCheckoutPaymentSettings.UseConvertPlus
-                ?
-                $"{getValue("sale_id")}" +
-                $"{_twoCheckoutPaymentSettings.AccountNumber}" +
-                $"{getValue("invoice_id")}" +
-                $"{_twoCheckoutPaymentSettings.SecretWord}"
-                :
-                $"{_twoCheckoutPaymentSettings.SecretWord}" +
-                $"{_twoCheckoutPaymentSettings.AccountNumber}" +
-                $"{(_twoCheckoutPaymentSettings.UseSandbox ? "1" : getValue("order_number"))}" +
-                $"{getValue("x_amount")}";
-
-            var data = MD5.HashData(Encoding.Default.GetBytes(stringToHash));
-            var sBuilder = new StringBuilder();
-            foreach (var t in data)
-            {
-                sBuilder.Append(t.ToString("x2"));
-            }
-
-            var computedHash = sBuilder.ToString();
-            var receivedHash = getValue(_twoCheckoutPaymentSettings.UseConvertPlus ? "md5_hash" : "x_md5_hash");
-
-            if (!string.Equals(computedHash, receivedHash, StringComparison.InvariantCultureIgnoreCase))
-            {
-                await _orderService.InsertOrderNoteAsync(new OrderNote
-                {
-                    OrderId = order.Id,
-                    Note = $"Computed hash '{computedHash}' is not equal to received hash '{receivedHash}'",
-                    DisplayToCustomer = false,
-                    CreatedOnUtc = DateTime.UtcNow
-                });
-
-                throw new NopException("Hash validation failed");
-            }
-        }
-
-        var newPaymentStatus = PaymentStatus.Pending;
-
-        var messageType = getValue("message_type");
-        var invoiceStatus = getValue("invoice_status");
-        var fraudStatus = getValue("fraud_status");
-        var paymentType = getValue("payment_type");
-
-        if (string.Equals(messageType, "FRAUD_STATUS_CHANGED", StringComparison.InvariantCultureIgnoreCase)
-            && fraudStatus == "pass"
-            && (invoiceStatus == "approved" || invoiceStatus == "deposited" || paymentType == "paypal ec"))
-        {
-            newPaymentStatus = PaymentStatus.Paid;
-        }
-
-        //mark order as paid
-        if (newPaymentStatus == PaymentStatus.Paid && _orderProcessingService.CanMarkOrderAsPaid(order))
-            await _orderProcessingService.MarkOrderAsPaidAsync(order);
-    }
 
     /// <summary>
     /// Process a payment
@@ -345,8 +242,7 @@ public class TwoCheckoutPaymentProcessor : BasePlugin, IPaymentMethod
         {
             UseSandbox = true,
             UseMd5Hashing = true,
-            LogIpnErrors = true,
-            UseConvertPlus = true
+            LogIpnErrors = true
         });
 
         await _localizationService.AddOrUpdateLocaleResourceAsync(new Dictionary<string, string>

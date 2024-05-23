@@ -17,26 +17,26 @@ public class PaymentTwoCheckoutPublicController : BasePaymentController
     #region Fields
 
     private readonly INotificationService _notificationService;
-    private readonly IPaymentManager _paymentManager;
     private readonly IPaymentPluginManager _paymentPluginManager;
     private readonly IStoreContext _storeContext;
     private readonly IWorkContext _workContext;
+    private readonly PaymentManager _paymentManager;
 
     #endregion
 
     #region Ctor
 
     public PaymentTwoCheckoutPublicController(INotificationService notificationService,
-        IPaymentManager paymentManager,
         IPaymentPluginManager paymentPluginManager,
         IStoreContext storeContext,
-        IWorkContext workContext)
+        IWorkContext workContext,
+        PaymentManager paymentManager)
     {
         _notificationService = notificationService;
-        _paymentManager = paymentManager;
         _paymentPluginManager = paymentPluginManager;
         _storeContext = storeContext;
         _workContext = workContext;
+        _paymentManager = paymentManager;
     }
 
     #endregion

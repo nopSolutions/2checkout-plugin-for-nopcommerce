@@ -13,8 +13,7 @@ public class TwoCheckoutDefaults
     /// <summary>
     /// Gets the service URL
     /// </summary>
-    public static (string TwoCheckout, string ConvertPlus) ServiceUrl =>
-        ("https://www.2checkout.com/checkout/purchase", "https://secure.2checkout.com/checkout/buy/");
+    public static string ServiceUrl => "https://secure.2checkout.com/checkout/buy/";
 
     /// <summary>
     /// Gets the configuration route name

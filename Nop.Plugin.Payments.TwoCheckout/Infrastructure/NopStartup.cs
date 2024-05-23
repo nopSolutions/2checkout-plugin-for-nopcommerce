@@ -18,14 +18,7 @@ public class NopStartup : INopStartup
     /// <param name="configuration">Configuration of the application</param>
     public void ConfigureServices(IServiceCollection services, IConfiguration configuration)
     {
-        services.AddScoped(serviceProvider =>
-        {
-            var settings = serviceProvider.GetRequiredService<TwoCheckoutPaymentSettings>();
-
-            return (IPaymentManager)EngineContext.Current.ResolveUnregistered(settings.UseConvertPlus
-                ? typeof(ConvertPlusManager)
-                : typeof(TwoCheckoutManager));
-        });
+        services.AddScoped<PaymentManager>();
     }
 
     /// <summary>
