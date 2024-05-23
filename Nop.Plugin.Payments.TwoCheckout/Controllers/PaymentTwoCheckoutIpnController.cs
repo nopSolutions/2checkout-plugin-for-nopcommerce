@@ -2,6 +2,7 @@
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Mvc;
 using Nop.Core;
+using Nop.Plugin.Payments.TwoCheckout.Services;
 using Nop.Services.Logging;
 using Nop.Services.Payments;
 
@@ -14,6 +15,7 @@ namespace Nop.Plugin.Payments.TwoCheckout.Controllers
         private readonly ILogger _logger;
         private readonly IPaymentPluginManager _paymentPluginManager;
         private readonly IStoreContext _storeContext;
+        private readonly PaymentManager _paymentManager;
         private readonly TwoCheckoutPaymentSettings _twoCheckoutPaymentSettings;
 
         #endregion
@@ -23,11 +25,13 @@ namespace Nop.Plugin.Payments.TwoCheckout.Controllers
         public PaymentTwoCheckoutIpnController(ILogger logger,
             IPaymentPluginManager paymentPluginManager,
             IStoreContext storeContext,
+            PaymentManager paymentManager,
             TwoCheckoutPaymentSettings twoCheckoutPaymentSettings)
         {
             _logger = logger;
             _paymentPluginManager = paymentPluginManager;
             _storeContext = storeContext;
+            _paymentManager = paymentManager;
             _twoCheckoutPaymentSettings = twoCheckoutPaymentSettings;
         }
 
@@ -42,10 +46,10 @@ namespace Nop.Plugin.Payments.TwoCheckout.Controllers
                 //ensure this payment method is active
                 var store = await _storeContext.GetCurrentStoreAsync();
                 var paymentMethod = await _paymentPluginManager.LoadPluginBySystemNameAsync(TwoCheckoutDefaults.SystemName, storeId: store.Id);
-                if (!_paymentPluginManager.IsPluginActive(paymentMethod) || paymentMethod is not TwoCheckoutPaymentProcessor plugin)
+                if (!_paymentPluginManager.IsPluginActive(paymentMethod))
                     throw new NopException($"{TwoCheckoutDefaults.SystemName} error. Module cannot be loaded");
 
-                await plugin.HandleIpnRequestAsync();
+                await _paymentManager.HandleIpnRequestAsync();
             }
             catch (Exception exception)
             {
