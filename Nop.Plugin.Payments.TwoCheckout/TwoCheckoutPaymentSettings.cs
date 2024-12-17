@@ -23,9 +23,9 @@ public class TwoCheckoutPaymentSettings : ISettings
     public bool UseSandbox { get; set; }
 
     /// <summary>
-    /// Gets or sets a value indicating whether to use MD5 hashing
+    /// Gets or sets a value indicating whether to use hashing r check request
     /// </summary>
-    public bool UseMd5Hashing { get; set; }
+    public bool? UseHashing { get; set; }
 
     /// <summary>
     /// Gets or sets an additional fee

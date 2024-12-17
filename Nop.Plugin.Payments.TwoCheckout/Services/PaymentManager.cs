@@ -71,7 +71,60 @@ public class PaymentManager
     #region Utilities
 
     /// <summary>
-    /// Prepare billin address details
+    /// Verify the passed data by comparing hashes
+    /// </summary>
+    /// <returns>A task that represents the asynchronous operation</returns>
+    private async Task VerifyPassedDataAsync(int orderId, Func<string, string> getValue)
+    {
+        if (!(_twoCheckoutPaymentSettings.UseHashing ?? true))
+            return;
+
+        var dataToHash = Encoding.Default.GetBytes(
+            $"{getValue("sale_id")}" +
+            $"{_twoCheckoutPaymentSettings.AccountNumber}" +
+            $"{getValue("invoice_id")}" +
+            $"{_twoCheckoutPaymentSettings.SecretWord}");
+
+        var receivedHash = getValue("hash");
+
+        var hashArray = receivedHash.Split(':');
+        var algorithm = hashArray.Length > 1 ? hashArray[0].Replace('-', '_').Trim() : "sha256";
+
+        if (hashArray.Length > 1)
+            receivedHash = hashArray[1].Trim();
+
+        var key = Encoding.Default.GetBytes(_twoCheckoutPaymentSettings.SecretWord);
+
+        var data = algorithm switch
+        {
+            "sha256" => new HMACSHA256(key).ComputeHash(dataToHash),
+            "sha3_256" => new HMACSHA3_256(key).ComputeHash(dataToHash),
+            _ => throw new NopException($"Hash algorithm '{algorithm}' is not supported")
+        };
+
+        var sBuilder = new StringBuilder();
+
+        foreach (var t in data)
+            sBuilder.Append(t.ToString("x2"));
+
+        var computedHash = sBuilder.ToString();
+
+        if (!string.Equals(computedHash, receivedHash, StringComparison.InvariantCultureIgnoreCase))
+        {
+            await _orderService.InsertOrderNoteAsync(new OrderNote
+            {
+                OrderId = orderId,
+                Note = $"Computed hash '{computedHash}' is not equal to received hash '{receivedHash}'",
+                DisplayToCustomer = false,
+                CreatedOnUtc = DateTime.UtcNow
+            });
+
+            throw new NopException("Hash validation failed");
+        }
+    }
+
+    /// <summary>
+    /// Prepare billing address details
     /// </summary>
     /// <param name="addressId">Address identifier</param>
     /// <param name="builder">String builder</param>
@@ -118,7 +171,7 @@ public class PaymentManager
     private static void FillOrderTotals(Order order, StringBuilder builder)
     {
         builder.AppendJoin(string.Empty,
-            $"&prod={WebUtility.UrlEncode($"Order #{order.CustomOrderNumber}")}",
+            $"&prod={WebUtility.UrlEncode($"Order_#{order.CustomOrderNumber}")}",
             "&qty=1",
             $"&price={order.OrderTotal.ToString("0.00", CultureInfo.InvariantCulture)}",
             "&type=digital");
@@ -179,38 +232,7 @@ public class PaymentManager
             CreatedOnUtc = DateTime.UtcNow
         });
 
-        //verify the passed data by comparing MD5 hashes
-        if (_twoCheckoutPaymentSettings.UseMd5Hashing)
-        {
-            var stringToHash =
-                $"{getValue("sale_id")}" +
-                $"{_twoCheckoutPaymentSettings.AccountNumber}" +
-                $"{getValue("invoice_id")}" +
-                $"{_twoCheckoutPaymentSettings.SecretWord}";
-
-            var data = MD5.HashData(Encoding.Default.GetBytes(stringToHash));
-            var sBuilder = new StringBuilder();
-            foreach (var t in data)
-            {
-                sBuilder.Append(t.ToString("x2"));
-            }
-
-            var computedHash = sBuilder.ToString();
-            var receivedHash = getValue("md5_hash");
-
-            if (!string.Equals(computedHash, receivedHash, StringComparison.InvariantCultureIgnoreCase))
-            {
-                await _orderService.InsertOrderNoteAsync(new OrderNote
-                {
-                    OrderId = order.Id,
-                    Note = $"Computed hash '{computedHash}' is not equal to received hash '{receivedHash}'",
-                    DisplayToCustomer = false,
-                    CreatedOnUtc = DateTime.UtcNow
-                });
-
-                throw new NopException("Hash validation failed");
-            }
-        }
+        await VerifyPassedDataAsync(order.Id, getValue);
 
         var newPaymentStatus = PaymentStatus.Pending;
 
@@ -310,7 +332,7 @@ public class PaymentManager
         builder.AppendFormat("&order-ext-ref={0}", order.CustomOrderNumber);
 
         var urlHelper = _urlHelperFactory.GetUrlHelper(_actionContextAccessor.ActionContext);
-        var url = urlHelper.RouteUrl(TwoCheckoutDefaults.CompletedRouteName, null, _webHelper.GetCurrentRequestProtocol());
+        var url = "https://4d80-77-238-242-194.ngrok-free.app/Plugins/PaymentTwoCheckout/Completed";//urlHelper.RouteUrl(TwoCheckoutDefaults.CompletedRouteName, null, _webHelper.GetCurrentRequestProtocol());
         builder.AppendFormat("&return-url={0}", url);
         builder.Append("&return-type=redirect");
 

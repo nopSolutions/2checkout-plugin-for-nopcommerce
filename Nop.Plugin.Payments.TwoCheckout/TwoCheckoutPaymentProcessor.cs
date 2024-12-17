@@ -241,7 +241,7 @@ public class TwoCheckoutPaymentProcessor : BasePlugin, IPaymentMethod
         await _settingService.SaveSettingAsync(new TwoCheckoutPaymentSettings()
         {
             UseSandbox = true,
-            UseMd5Hashing = true,
+            UseHashing = true,
             LogIpnErrors = true
         });
 
@@ -285,6 +285,30 @@ public class TwoCheckoutPaymentProcessor : BasePlugin, IPaymentMethod
     public async Task<string> GetPaymentMethodDescriptionAsync()
     {
         return await _localizationService.GetResourceAsync("Plugins.Payments.2Checkout.PaymentMethodDescription");
+    }
+
+    /// <summary>
+    /// Update plugin
+    /// </summary>
+    /// <param name="currentVersion">Current version of plugin</param>
+    /// <param name="targetVersion">New version of plugin</param>
+    /// <returns>A task that represents the asynchronous operation</returns>
+    public override async Task UpdateAsync(string currentVersion, string targetVersion)
+    {
+        if (currentVersion == "4.80.1")
+        {
+            var settings = await _settingService.LoadSettingAsync<TwoCheckoutPaymentSettings>();
+
+            if (settings == null) 
+                return;
+
+            if (settings.UseHashing.HasValue)
+                return;
+
+            var oldSetting = _settingService.GetSettingByKey($"{nameof(TwoCheckoutPaymentSettings)}.UseMd5Hashing", true);
+
+            settings.UseHashing = oldSetting;
+        }
     }
 
     #endregion
