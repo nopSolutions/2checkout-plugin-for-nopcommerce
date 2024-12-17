@@ -20,7 +20,6 @@ public class PaymentTwoCheckoutController : BasePaymentController
 
     private readonly ILocalizationService _localizationService;
     private readonly INotificationService _notificationService;
-    private readonly IPermissionService _permissionService;
     private readonly ISettingService _settingService;
     private readonly IWebHelper _webHelper;
     private readonly TwoCheckoutPaymentSettings _twoCheckoutPaymentSettings;
@@ -31,14 +30,12 @@ public class PaymentTwoCheckoutController : BasePaymentController
 
     public PaymentTwoCheckoutController(ILocalizationService localizationService,
         INotificationService notificationService,
-        IPermissionService permissionService,
         ISettingService settingService,
         IWebHelper webHelper,
         TwoCheckoutPaymentSettings twoCheckoutPaymentSettings)
     {
         _localizationService = localizationService;
         _notificationService = notificationService;
-        _permissionService = permissionService;
         _settingService = settingService;
         _webHelper = webHelper;
         _twoCheckoutPaymentSettings = twoCheckoutPaymentSettings;
@@ -48,10 +45,10 @@ public class PaymentTwoCheckoutController : BasePaymentController
 
     #region Methods
 
-    public async Task<IActionResult> Configure()
+    [CheckPermission(StandardPermission.Configuration.MANAGE_PAYMENT_METHODS)]
+    public IActionResult Configure()
     {
-        if (!await _permissionService.AuthorizeAsync(StandardPermissionProvider.ManagePaymentMethods))
-            return AccessDeniedView();
+        var requestProtocol = _webHelper.GetCurrentRequestProtocol();
 
         var model = new ConfigurationModel
         {
@@ -59,23 +56,20 @@ public class PaymentTwoCheckoutController : BasePaymentController
             SecretWord = _twoCheckoutPaymentSettings.SecretWord,
             UseSandbox = _twoCheckoutPaymentSettings.UseSandbox,
             AdditionalFee = _twoCheckoutPaymentSettings.AdditionalFee,
-            AdditionalFeePercentage = _twoCheckoutPaymentSettings.AdditionalFeePercentage
+            AdditionalFeePercentage = _twoCheckoutPaymentSettings.AdditionalFeePercentage,
+            IpnUrl = Url.RouteUrl(TwoCheckoutDefaults.IpnRouteName, null, requestProtocol),
+            RedirectUrl = Url.RouteUrl(TwoCheckoutDefaults.CompletedRouteName, null, requestProtocol)
         };
-
-        model.IpnUrl = Url.RouteUrl(TwoCheckoutDefaults.IpnRouteName, null, _webHelper.GetCurrentRequestProtocol());
-        model.RedirectUrl = Url.RouteUrl(TwoCheckoutDefaults.CompletedRouteName, null, _webHelper.GetCurrentRequestProtocol());
 
         return View("~/Plugins/Payments.TwoCheckout/Views/Configure.cshtml", model);
     }
 
     [HttpPost]
+    [CheckPermission(StandardPermission.Configuration.MANAGE_PAYMENT_METHODS)]
     public async Task<IActionResult> Configure(ConfigurationModel model)
     {
-        if (!await _permissionService.AuthorizeAsync(StandardPermissionProvider.ManagePaymentMethods))
-            return AccessDeniedView();
-
         if (!ModelState.IsValid)
-            return await Configure();
+            return Configure();
 
         _twoCheckoutPaymentSettings.AccountNumber = model.AccountNumber;
         _twoCheckoutPaymentSettings.SecretWord = model.SecretWord;
@@ -86,7 +80,7 @@ public class PaymentTwoCheckoutController : BasePaymentController
 
         _notificationService.SuccessNotification(await _localizationService.GetResourceAsync("Admin.Plugins.Saved"));
 
-        return await Configure();
+        return Configure();
     }
 
     #endregion
