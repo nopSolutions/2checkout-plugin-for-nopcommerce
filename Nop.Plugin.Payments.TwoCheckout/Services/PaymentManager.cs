@@ -3,9 +3,6 @@ using System.Net;
 using System.Security.Cryptography;
 using System.Text;
 using Microsoft.AspNetCore.Http;
-using Microsoft.AspNetCore.Mvc;
-using Microsoft.AspNetCore.Mvc.Infrastructure;
-using Microsoft.AspNetCore.Mvc.Routing;
 using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.Extensions.Primitives;
 using Nop.Core;
@@ -15,6 +12,7 @@ using Nop.Core.Domain.Payments;
 using Nop.Services.Common;
 using Nop.Services.Directory;
 using Nop.Services.Orders;
+using Nop.Web.Framework.Mvc.Routing;
 
 namespace Nop.Plugin.Payments.TwoCheckout.Services;
 
@@ -26,14 +24,14 @@ public class PaymentManager
     #region Fields
 
     private readonly CurrencySettings _currencySettings;
-    private readonly IActionContextAccessor _actionContextAccessor;
     private readonly IAddressService _addressService;
     private readonly ICountryService _countryService;
     private readonly ICurrencyService _currencyService;
+    private readonly IHttpContextAccessor _httpContextAccessor;
+    private readonly INopUrlHelper _nopUrlHelper;
     private readonly IOrderProcessingService _orderProcessingService;
     private readonly IOrderService _orderService;
     private readonly IStateProvinceService _stateProvinceService;
-    private readonly IUrlHelperFactory _urlHelperFactory;
     private readonly IWebHelper _webHelper;
     private readonly TwoCheckoutPaymentSettings _twoCheckoutPaymentSettings;
 
@@ -42,26 +40,26 @@ public class PaymentManager
     #region Ctor
 
     public PaymentManager(CurrencySettings currencySettings,
-        IActionContextAccessor actionContextAccessor,
         IAddressService addressService,
         ICountryService countryService,
         ICurrencyService currencyService,
+        IHttpContextAccessor httpContextAccessor,
+        INopUrlHelper nopUrlHelper,
         IOrderProcessingService orderProcessingService,
         IOrderService orderService,
         IStateProvinceService stateProvinceService,
-        IUrlHelperFactory urlHelperFactory,
         IWebHelper webHelper,
         TwoCheckoutPaymentSettings twoCheckoutPaymentSettings)
     {
         _currencySettings = currencySettings;
-        _actionContextAccessor = actionContextAccessor;
         _addressService = addressService;
         _countryService = countryService;
+        _httpContextAccessor = httpContextAccessor;
         _currencyService = currencyService;
+        _nopUrlHelper = nopUrlHelper;
         _orderProcessingService = orderProcessingService;
         _orderService = orderService;
         _stateProvinceService = stateProvinceService;
-        _urlHelperFactory = urlHelperFactory;
         _webHelper = webHelper;
         _twoCheckoutPaymentSettings = twoCheckoutPaymentSettings;
     }
@@ -209,7 +207,7 @@ public class PaymentManager
     public async Task HandleIpnRequestAsync()
     {
 
-        var request = _actionContextAccessor.ActionContext.HttpContext.Request;
+        var request = _httpContextAccessor.HttpContext.Request;
         var form = request.HasFormContentType ? await request.ReadFormAsync() : new FormCollection(null);
         var parameters = request.HasFormContentType && form.Keys.Any()
             ? form.ToDictionary(param => param.Key.ToLower(), param => param.Value)
@@ -239,7 +237,7 @@ public class PaymentManager
             Note = note,
             DisplayToCustomer = false,
             CreatedOnUtc = DateTime.UtcNow
-        }); 
+        });
 
         await VerifyPassedDataAsync(order.Id, getValue);
 
@@ -267,7 +265,7 @@ public class PaymentManager
     {
         //More details: https://verifone.cloud/docs/2checkout/Documentation/07Commerce/2Checkout-ConvertPlus/Signature_validation_for_return_URL_via_ConvertPlus
 
-        var request = _actionContextAccessor.ActionContext.HttpContext.Request;
+        var request = _httpContextAccessor.HttpContext.Request;
         var form = request.HasFormContentType ? await request.ReadFormAsync() : new FormCollection(null);
         var parameters = request.HasFormContentType && form.Keys.Any()
             ? form.ToDictionary(param => param.Key.ToLower(), param => param.Value)
@@ -298,7 +296,7 @@ public class PaymentManager
         //verify the passed data by comparing signature
         if (!string.Equals(computedSignature, receivedSignature, StringComparison.InvariantCultureIgnoreCase))
         {
-            await _orderService.InsertOrderNoteAsync(new OrderNote  
+            await _orderService.InsertOrderNoteAsync(new OrderNote
             {
                 OrderId = order.Id,
                 Note = $"Computed signature '{computedSignature}' is not equal to received signature '{receivedSignature}'",
@@ -328,9 +326,7 @@ public class PaymentManager
         builder.AppendFormat("&currency={0}", currency?.CurrencyCode);
         builder.AppendFormat("&order-ext-ref={0}", order.CustomOrderNumber);
 
-        var urlHelper = _urlHelperFactory.GetUrlHelper(_actionContextAccessor.ActionContext);
-        var url = urlHelper.RouteUrl(TwoCheckoutDefaults.CompletedRouteName, null, _webHelper.GetCurrentRequestProtocol());
-
+        var url = _nopUrlHelper.RouteUrl(TwoCheckoutDefaults.CompletedRouteName, null, _webHelper.GetCurrentRequestProtocol());
         builder.AppendFormat("&return-url={0}", url);
         builder.Append("&return-type=redirect");
 

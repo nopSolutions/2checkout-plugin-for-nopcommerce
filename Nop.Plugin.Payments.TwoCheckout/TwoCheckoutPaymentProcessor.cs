@@ -1,7 +1,4 @@
 ﻿using Microsoft.AspNetCore.Http;
-using Microsoft.AspNetCore.Mvc;
-using Microsoft.AspNetCore.Mvc.Infrastructure;
-using Microsoft.AspNetCore.Mvc.Routing;
 using Nop.Core.Domain.Orders;
 using Nop.Plugin.Payments.TwoCheckout.Components;
 using Nop.Plugin.Payments.TwoCheckout.Services;
@@ -10,6 +7,7 @@ using Nop.Services.Localization;
 using Nop.Services.Orders;
 using Nop.Services.Payments;
 using Nop.Services.Plugins;
+using Nop.Web.Framework.Mvc.Routing;
 
 namespace Nop.Plugin.Payments.TwoCheckout;
 
@@ -20,11 +18,11 @@ public class TwoCheckoutPaymentProcessor : BasePlugin, IPaymentMethod
 {
     #region Fields
 
-    private readonly IActionContextAccessor _actionContextAccessor;
+    private readonly IHttpContextAccessor _httpContextAccessor;
     private readonly ILocalizationService _localizationService;
     private readonly IOrderTotalCalculationService _orderTotalCalculationService;
+    private readonly INopUrlHelper _nopUrlHelper;
     private readonly ISettingService _settingService;
-    private readonly IUrlHelperFactory _urlHelperFactory;
     private readonly PaymentManager _paymentManager;
     private readonly TwoCheckoutPaymentSettings _twoCheckoutPaymentSettings;
 
@@ -32,19 +30,19 @@ public class TwoCheckoutPaymentProcessor : BasePlugin, IPaymentMethod
 
     #region Ctor
 
-    public TwoCheckoutPaymentProcessor(IActionContextAccessor actionContextAccessor,
+    public TwoCheckoutPaymentProcessor(IHttpContextAccessor httpContextAccessor,
         ILocalizationService localizationService,
         IOrderTotalCalculationService orderTotalCalculationService,
+        INopUrlHelper nopUrlHelper,
         ISettingService settingService,
-        IUrlHelperFactory urlHelperFactory,
         PaymentManager paymentManager,
         TwoCheckoutPaymentSettings twoCheckoutPaymentSettings)
     {
-        _actionContextAccessor = actionContextAccessor;
+        _httpContextAccessor = httpContextAccessor;
         _localizationService = localizationService;
         _orderTotalCalculationService = orderTotalCalculationService;
+        _nopUrlHelper = nopUrlHelper;
         _settingService = settingService;
-        _urlHelperFactory = urlHelperFactory;
         _paymentManager = paymentManager;
         _twoCheckoutPaymentSettings = twoCheckoutPaymentSettings;
     }
@@ -75,7 +73,7 @@ public class TwoCheckoutPaymentProcessor : BasePlugin, IPaymentMethod
     {
         var url = await _paymentManager.GetRequestUrlAsync(postProcessPaymentRequest.Order);
 
-        _actionContextAccessor.ActionContext.HttpContext.Response.Redirect(url);
+        _httpContextAccessor.HttpContext.Response.Redirect(url);
     }
 
     /// <summary>
@@ -220,7 +218,7 @@ public class TwoCheckoutPaymentProcessor : BasePlugin, IPaymentMethod
     /// </summary>
     public override string GetConfigurationPageUrl()
     {
-        return _urlHelperFactory.GetUrlHelper(_actionContextAccessor.ActionContext).RouteUrl(TwoCheckoutDefaults.ConfigurationRouteName);
+        return _nopUrlHelper.RouteUrl(TwoCheckoutDefaults.ConfigurationRouteName);
     }
 
     /// <summary>
@@ -302,7 +300,7 @@ public class TwoCheckoutPaymentProcessor : BasePlugin, IPaymentMethod
         {
             var settings = await _settingService.LoadSettingAsync<TwoCheckoutPaymentSettings>();
 
-            if (settings == null) 
+            if (settings == null)
                 return;
 
             if (settings.UseHashing.HasValue)
