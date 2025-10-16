@@ -79,11 +79,9 @@ public class PaymentManager
         if (!(_twoCheckoutPaymentSettings.UseHashing ?? true))
             return;
 
-        var dataToHash = Encoding.Default.GetBytes(
-            $"{getValue("sale_id")}" +
-            $"{_twoCheckoutPaymentSettings.AccountNumber}" +
-            $"{getValue("invoice_id")}" +
-            $"{_twoCheckoutPaymentSettings.SecretWord}");
+        //More details: https://verifone.cloud/docs/2checkout/API-Integration/Webhooks/Instant-Notification-Service-%2528INS%2529/INS-read-receipt-response#validate-response
+
+        var dataToHash = Encoding.Default.GetBytes($"{getValue("sale_id")}{_twoCheckoutPaymentSettings.AccountNumber}{getValue("invoice_id")}{_twoCheckoutPaymentSettings.SecretWord}");
 
         var receivedHash = getValue("hash");
 
@@ -93,9 +91,9 @@ public class PaymentManager
         if (hashArray.Length > 1)
             receivedHash = hashArray[1].Trim();
 
-        var key = Encoding.Default.GetBytes(_twoCheckoutPaymentSettings.SecretWord);
+        var key = Encoding.Default.GetBytes(_twoCheckoutPaymentSettings.SecretKey);
 
-        var data = algorithm switch
+        var data = algorithm?.ToLower() switch
         {
             "sha256" => new HMACSHA256(key).ComputeHash(dataToHash),
             "sha3_256" => new HMACSHA3_256(key).ComputeHash(dataToHash),
@@ -105,7 +103,7 @@ public class PaymentManager
         var sBuilder = new StringBuilder();
 
         foreach (var t in data)
-            sBuilder.Append(t.ToString("x2"));
+            sBuilder.AppendFormat("{0:x2}", t);
 
         var computedHash = sBuilder.ToString();
 
@@ -184,14 +182,18 @@ public class PaymentManager
     /// <returns>Signature</returns>
     private string GetSignature(Dictionary<string, StringValues> parameters)
     {
-        var paramsToCache = string.Join(string.Empty, parameters.Where(p => !p.Key.Equals("signature")).OrderBy(p => p.Key).Select(p => $"{p.Value.ToString().Length}{p.Value}"));
+        /// More details: <c>https://verifone.cloud/docs/2checkout/Documentation/07Commerce/2Checkout-ConvertPlus/ConvertPlus_Buy-Links_Signature</c>
+        var paramsToCache = parameters
+            .Where(p => !p.Key.Equals("signature"))
+            .OrderBy(p => p.Key)
+            .Aggregate(string.Empty, (c, next) => $"{c}{next.Value.ToString().Length}{next.Value}");
 
         var sBuilder = new StringBuilder();
 
         var data = new HMACSHA256(Encoding.UTF8.GetBytes(_twoCheckoutPaymentSettings.SecretWord)).ComputeHash(Encoding.UTF8.GetBytes(paramsToCache));
 
         foreach (var theByte in data)
-            sBuilder.Append(theByte.ToString("x2"));
+            sBuilder.AppendFormat("{0:x2}", theByte);
 
         return sBuilder.ToString();
     }
@@ -206,6 +208,7 @@ public class PaymentManager
     /// <returns>A task that represents the asynchronous operation</returns>
     public async Task HandleIpnRequestAsync()
     {
+
         var request = _actionContextAccessor.ActionContext.HttpContext.Request;
         var form = request.HasFormContentType ? await request.ReadFormAsync() : new FormCollection(null);
         var parameters = request.HasFormContentType && form.Keys.Any()
@@ -214,6 +217,12 @@ public class PaymentManager
 
         //define local function to get a value from the request Form or from the Query parameters
         string getValue(string key) => parameters.TryGetValue(key.ToLower(), out var value) ? value.ToString() : string.Empty;
+
+        var messageType = getValue("message_type");
+        var fraudStatus = getValue("fraud_status");
+
+        if (!string.Equals(messageType, "FRAUD_STATUS_CHANGED", StringComparison.InvariantCultureIgnoreCase) || fraudStatus != "pass")
+            return;
 
         //try to get an order by the number or by the identifier (used in previous plugin versions)
         var customOrderNumber = getValue("vendor_order_id");
@@ -230,23 +239,17 @@ public class PaymentManager
             Note = note,
             DisplayToCustomer = false,
             CreatedOnUtc = DateTime.UtcNow
-        });
+        }); 
 
         await VerifyPassedDataAsync(order.Id, getValue);
 
         var newPaymentStatus = PaymentStatus.Pending;
 
-        var messageType = getValue("message_type");
         var invoiceStatus = getValue("invoice_status");
-        var fraudStatus = getValue("fraud_status");
         var paymentType = getValue("payment_type");
 
-        if (string.Equals(messageType, "FRAUD_STATUS_CHANGED", StringComparison.InvariantCultureIgnoreCase)
-            && fraudStatus == "pass"
-            && (invoiceStatus == "approved" || invoiceStatus == "deposited" || paymentType == "paypal ec"))
-        {
+        if (invoiceStatus == "approved" || invoiceStatus == "deposited" || paymentType == "paypal ec")
             newPaymentStatus = PaymentStatus.Paid;
-        }
 
         //mark order as paid
         if (newPaymentStatus == PaymentStatus.Paid && _orderProcessingService.CanMarkOrderAsPaid(order))
@@ -262,6 +265,8 @@ public class PaymentManager
     /// </returns>
     public async Task<int?> HandleReturnRequestAsync()
     {
+        //More details: https://verifone.cloud/docs/2checkout/Documentation/07Commerce/2Checkout-ConvertPlus/Signature_validation_for_return_URL_via_ConvertPlus
+
         var request = _actionContextAccessor.ActionContext.HttpContext.Request;
         var form = request.HasFormContentType ? await request.ReadFormAsync() : new FormCollection(null);
         var parameters = request.HasFormContentType && form.Keys.Any()
@@ -287,21 +292,13 @@ public class PaymentManager
             CreatedOnUtc = DateTime.UtcNow
         });
 
-        string computedSignature;
-        string receivedSignature;
-
-        bool isSignatureValid()
-        {
-            computedSignature = GetSignature(parameters);
-            receivedSignature = getValue("signature");
-
-            return string.Equals(computedSignature, receivedSignature, StringComparison.InvariantCultureIgnoreCase);
-        }
+        var receivedSignature = getValue("signature");
+        var computedSignature = GetSignature(parameters);
 
         //verify the passed data by comparing signature
-        if (!isSignatureValid())
+        if (!string.Equals(computedSignature, receivedSignature, StringComparison.InvariantCultureIgnoreCase))
         {
-            await _orderService.InsertOrderNoteAsync(new OrderNote
+            await _orderService.InsertOrderNoteAsync(new OrderNote  
             {
                 OrderId = order.Id,
                 Note = $"Computed signature '{computedSignature}' is not equal to received signature '{receivedSignature}'",
@@ -332,7 +329,8 @@ public class PaymentManager
         builder.AppendFormat("&order-ext-ref={0}", order.CustomOrderNumber);
 
         var urlHelper = _urlHelperFactory.GetUrlHelper(_actionContextAccessor.ActionContext);
-        var url = "https://4d80-77-238-242-194.ngrok-free.app/Plugins/PaymentTwoCheckout/Completed";//urlHelper.RouteUrl(TwoCheckoutDefaults.CompletedRouteName, null, _webHelper.GetCurrentRequestProtocol());
+        var url = urlHelper.RouteUrl(TwoCheckoutDefaults.CompletedRouteName, null, _webHelper.GetCurrentRequestProtocol());
+
         builder.AppendFormat("&return-url={0}", url);
         builder.Append("&return-type=redirect");
 

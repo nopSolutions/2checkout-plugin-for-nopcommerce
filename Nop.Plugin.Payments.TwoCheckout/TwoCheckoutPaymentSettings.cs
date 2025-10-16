@@ -18,6 +18,11 @@ public class TwoCheckoutPaymentSettings : ISettings
     public string SecretWord { get; set; }
 
     /// <summary>
+    /// Gets or sets a secret key
+    /// </summary>
+    public string SecretKey { get; set; }
+
+    /// <summary>
     /// Gets or sets a value indicating whether to use sandbox (testing environment)
     /// </summary>
     public bool UseSandbox { get; set; }

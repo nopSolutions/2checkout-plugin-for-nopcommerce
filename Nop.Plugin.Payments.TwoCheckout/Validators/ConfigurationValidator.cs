@@ -23,6 +23,11 @@ public class ConfigurationValidator : BaseNopValidator<ConfigurationModel>
             .NotEmpty()
             .WithMessageAwait(localizationService.GetResourceAsync("Plugins.Payments.2Checkout.SecretWord.Required"))
             .When(model => !model.UseSandbox);
+
+        RuleFor(model => model.SecretKey)
+            .NotEmpty()
+            .WithMessageAwait(localizationService.GetResourceAsync("Plugins.Payments.2Checkout.SecretKey.Required"))
+            .When(model => !model.UseSandbox);
     }
 
     #endregion

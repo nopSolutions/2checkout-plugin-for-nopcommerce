@@ -20,6 +20,11 @@ public record ConfigurationModel : BaseNopModel
     [NoTrim]
     public string SecretWord { get; set; }
 
+    [NopResourceDisplayName("Plugins.Payments.2Checkout.SecretKey")]
+    [DataType(DataType.Password)]
+    [NoTrim]
+    public string SecretKey { get; set; }
+
     [NopResourceDisplayName("Plugins.Payments.2Checkout.UseSandbox")]
     public bool UseSandbox { get; set; }
 

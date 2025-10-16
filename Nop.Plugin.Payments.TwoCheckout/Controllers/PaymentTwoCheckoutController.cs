@@ -54,6 +54,7 @@ public class PaymentTwoCheckoutController : BasePaymentController
         {
             AccountNumber = _twoCheckoutPaymentSettings.AccountNumber,
             SecretWord = _twoCheckoutPaymentSettings.SecretWord,
+            SecretKey = _twoCheckoutPaymentSettings.SecretKey,
             UseSandbox = _twoCheckoutPaymentSettings.UseSandbox,
             AdditionalFee = _twoCheckoutPaymentSettings.AdditionalFee,
             AdditionalFeePercentage = _twoCheckoutPaymentSettings.AdditionalFeePercentage,
@@ -73,6 +74,7 @@ public class PaymentTwoCheckoutController : BasePaymentController
 
         _twoCheckoutPaymentSettings.AccountNumber = model.AccountNumber;
         _twoCheckoutPaymentSettings.SecretWord = model.SecretWord;
+        _twoCheckoutPaymentSettings.SecretKey = model.SecretKey;
         _twoCheckoutPaymentSettings.UseSandbox = model.UseSandbox;
         _twoCheckoutPaymentSettings.AdditionalFee = model.AdditionalFee;
         _twoCheckoutPaymentSettings.AdditionalFeePercentage = model.AdditionalFeePercentage;
