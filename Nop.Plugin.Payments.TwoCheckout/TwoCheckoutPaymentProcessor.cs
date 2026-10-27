@@ -305,8 +305,8 @@ public class TwoCheckoutPaymentProcessor : BasePlugin, IPaymentMethod
 
             if (settings.UseHashing.HasValue)
                 return;
-
-            var oldSetting = _settingService.GetSettingByKey($"{nameof(TwoCheckoutPaymentSettings)}.UseMd5Hashing", true);
+            
+            var oldSetting = await _settingService.GetSettingByKeyAsync($"{nameof(TwoCheckoutPaymentSettings)}.UseMd5Hashing", true);
 
             settings.UseHashing = oldSetting;
         }

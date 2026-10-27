@@ -2,6 +2,7 @@
 using Nop.Data;
 using Nop.Data.Migrations;
 using Nop.Services.Localization;
+using Nop.Web.Framework.Extensions;
 
 namespace Nop.Plugin.Payments.TwoCheckout.Migrations;
 
@@ -32,7 +33,7 @@ public class Migration4802 : MigrationBase
 
         #region Locales
 
-        _localizationService.AddOrUpdateLocaleResource(new Dictionary<string, string>
+        this.AddOrUpdateLocaleResource(new Dictionary<string, string>
         {
             ["Plugins.Payments.2Checkout.SecretKey"] = "Secret Key",
             ["Plugins.Payments.2Checkout.SecretKey.Hint"] = "Enter secret key.",
